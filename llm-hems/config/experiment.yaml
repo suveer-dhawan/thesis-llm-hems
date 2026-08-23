@@ -2,7 +2,7 @@
 # BUILD_SPEC.md §3, §6.3. Every run writes its fully resolved config + seed
 # into its results folder (design principle §2.3).
 
-agent: stub                      # CONFIRM: stub | milp | noisy_milp | llm -- only "stub" runnable so far
+agent: stub                      # CONFIRM: stub | milp | noisy_milp | llm -- llm not implemented until Phase 2
 
 horizon_days: 1                  # BUILD_SPEC.md §4: default one day = 48 steps; extend for elasticity
 steps_per_day: 48
@@ -20,6 +20,12 @@ noisy_milp:
   comfort_band_jitter_c: 0.5     # CONFIRM: placeholder
   setpoint_jitter_c: 0.5         # CONFIRM: placeholder
   deadline_jitter_steps: 1       # CONFIRM: placeholder
-  price_noise_std: 0.0           # CONFIRM: placeholder
+  # CONFIRM: placeholder, but load-bearing -- without *some* perceived-price
+  # noise, washer start time reliably ties back to the same slot as the
+  # clean MILP (the tariff has flat-rate blocks, so comfort/deadline jitter
+  # alone rarely breaks the LP's tie-break). 0.02 ($/kWh) was the smallest
+  # value in a 0/0.02/0.05 sweep that made noisy-MILP washer timing stagger
+  # relative to clean MILP across seeds on household 8596070 (Part 1b).
+  price_noise_std: 0.02
 
 results_dir: results             # timestamped run folders written here (gitignored)

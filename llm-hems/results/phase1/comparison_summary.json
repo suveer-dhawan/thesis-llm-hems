@@ -1,0 +1,16 @@
+{
+  "household_id": 8596070,
+  "date": "2013-01-18",
+  "base_kwh_total": 57.844,
+  "milp": {
+    "total_cost": 34.2771,
+    "flexible_share_pct": 17.89,
+    "washer_completed_by_step": 27
+  },
+  "noisy_milp": {
+    "total_cost": 34.2771,
+    "flexible_share_pct": 17.89,
+    "washer_completed_by_step": 21,
+    "seed": 42
+  }
+}

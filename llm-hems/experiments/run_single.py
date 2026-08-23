@@ -1,11 +1,15 @@
 """One household, one agent.
 
-Responsibility (BUILD_SPEC.md §3, §16 P0): CLI entry point that runs a
+Responsibility (BUILD_SPEC.md §3, §16 P0/P1): CLI entry point that runs a
 single household through the full simulator loop for one agent and writes
 results to `results/phase1/`: a load-curve plot, a per-step decision log
 (parquet), and a `summary.json` of metrics (BUILD_SPEC.md §13).
 
-Only `--agent stub` is wired up so far -- MILP/noisy-MILP land in Part 1b.
+`--agent stub` runs the deterministic environment alone (Part 1a). `--agent
+milp` / `--agent noisy_milp` additionally run the *other* MILP baseline for
+comparison (deterministic, no LLM spend either way) and write a 3-way
+overlay plot -- base (SGSC) / MILP total / noisy-MILP total -- plus each
+run's total cost (Part 1b, BUILD_SPEC.md §13 Phase 1 definition of done).
 """
 
 from __future__ import annotations
@@ -16,15 +20,17 @@ import json
 from pathlib import Path
 
 from hems.agents.base import DecisionAgent
+from hems.agents.milp_agent import MILPAgent
+from hems.agents.noisy_milp_agent import NoisyMILPAgent
 from hems.agents.stub_agent import StubAgent
 from hems.analysis.metrics import summary_dict
-from hems.analysis.plots import plot_load_curve
+from hems.analysis.plots import plot_load_curve, plot_overlay
 from hems.environment.appliances import HVACParams, WasherParams
 from hems.environment.household import Household
 from hems.environment.simulator import RunResult, run_simulation
 from hems.environment.tariff import Tariff
 
-AGENT_NAMES = ["stub"]
+AGENT_NAMES = ["stub", "milp", "noisy_milp"]
 
 DEFAULT_DATE = "2013-01-18"  # hot summer weekday for household 8596070, see BUILD_SPEC.md
 DEFAULT_RESULTS_DIR = "results/phase1"
@@ -43,12 +49,47 @@ def load_environment(
     return household, tariff, hvac_params, washer_params
 
 
-def build_agent(name: str) -> DecisionAgent:
-    if name not in AGENT_NAMES:
-        raise NotImplementedError(
-            f"agent '{name}' is not implemented yet; available: {AGENT_NAMES}"
-        )
-    return StubAgent()
+def build_agent(
+    name: str,
+    household: Household,
+    tariff: Tariff,
+    hvac_params: HVACParams,
+    washer_params: WasherParams,
+    date: dt.date,
+    seed: int,
+) -> DecisionAgent:
+    if name == "stub":
+        return StubAgent()
+    if name == "milp":
+        return MILPAgent(household, tariff, hvac_params, washer_params, date)
+    if name == "noisy_milp":
+        return NoisyMILPAgent(household, tariff, hvac_params, washer_params, date, seed=seed)
+    raise NotImplementedError(f"agent '{name}' is not implemented yet; available: {AGENT_NAMES}")
+
+
+def run_agent(
+    name: str,
+    household: Household,
+    tariff: Tariff,
+    hvac_params: HVACParams,
+    washer_params: WasherParams,
+    date: dt.date,
+    seed: int,
+) -> RunResult:
+    """Builds the agent and runs it through the simulator.
+
+    For `noisy_milp`, the agent's *own* jittered comfort/deadline params
+    (its heterogeneous household's real preferences, not a belief/reality
+    gap -- see `noisy_milp_agent.py`) are fed back into `run_simulation`
+    so its accounting is internally consistent.
+    """
+    agent = build_agent(name, household, tariff, hvac_params, washer_params, date, seed)
+    run_hvac_params = hvac_params
+    run_washer_params = washer_params
+    if isinstance(agent, NoisyMILPAgent):
+        run_hvac_params = agent.jittered_hvac_params
+        run_washer_params = agent.jittered_washer_params
+    return run_simulation(household, tariff, run_hvac_params, run_washer_params, agent, date)
 
 
 def write_run_outputs(result: RunResult, out_dir: Path, prefix: str) -> dict:
@@ -68,6 +109,7 @@ def main() -> None:
         default=DEFAULT_DATE,
         help="YYYY-MM-DD simulation day (default: Phase 1 hot weekday)",
     )
+    parser.add_argument("--seed", type=int, default=42, help="noisy_milp jitter seed")
     parser.add_argument("--results-dir", default=DEFAULT_RESULTS_DIR)
     args = parser.parse_args()
 
@@ -75,8 +117,7 @@ def main() -> None:
     household, tariff, hvac_params, washer_params = load_environment()
     out_dir = Path(args.results_dir)
 
-    agent = build_agent(args.agent)
-    result = run_simulation(household, tariff, hvac_params, washer_params, agent, date)
+    result = run_agent(args.agent, household, tariff, hvac_params, washer_params, date, args.seed)
     summary = write_run_outputs(result, out_dir, args.agent)
     print(
         f"[run_single] agent={result.agent_name} household={result.household_id} "
@@ -86,6 +127,45 @@ def main() -> None:
         f"comfort_violations={summary['comfort_violation_steps']} "
         f"washer_completed={summary['washer_completed']}"
     )
+
+    if args.agent in ("milp", "noisy_milp"):
+        other = "noisy_milp" if args.agent == "milp" else "milp"
+        other_result = run_agent(
+            other, household, tariff, hvac_params, washer_params, date, args.seed
+        )
+        write_run_outputs(other_result, out_dir, other)
+
+        milp_result = result if args.agent == "milp" else other_result
+        noisy_result = other_result if args.agent == "milp" else result
+
+        plot_overlay(
+            {"milp": milp_result, "noisy_milp": noisy_result},
+            out_dir / "comparison_overlay.png",
+            title=f"household {result.household_id} | {result.date} | MILP vs noisy-MILP",
+        )
+        comparison = {
+            "household_id": result.household_id,
+            "date": result.date.isoformat(),
+            "base_kwh_total": round(milp_result.base_kwh_total, 4),
+            "milp": {
+                "total_cost": round(milp_result.total_cost, 4),
+                "flexible_share_pct": round(milp_result.flexible_share * 100, 2),
+                "washer_completed_by_step": milp_result.washer_completed_by_step,
+            },
+            "noisy_milp": {
+                "total_cost": round(noisy_result.total_cost, 4),
+                "flexible_share_pct": round(noisy_result.flexible_share * 100, 2),
+                "washer_completed_by_step": noisy_result.washer_completed_by_step,
+                "seed": args.seed,
+            },
+        }
+        (out_dir / "comparison_summary.json").write_text(json.dumps(comparison, indent=2))
+        print(
+            f"[run_single] comparison: milp_cost=${comparison['milp']['total_cost']} "
+            f"noisy_milp_cost=${comparison['noisy_milp']['total_cost']} "
+            f"milp_washer_step={comparison['milp']['washer_completed_by_step']} "
+            f"noisy_milp_washer_step={comparison['noisy_milp']['washer_completed_by_step']}"
+        )
 
 
 if __name__ == "__main__":

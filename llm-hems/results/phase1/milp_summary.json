@@ -1,0 +1,23 @@
+{
+  "household_id": 8596070,
+  "date": "2013-01-18",
+  "agent": "milp",
+  "base_kwh_total": 57.844,
+  "flexible_kwh_total": 12.6,
+  "total_kwh_total": 70.444,
+  "flexible_share_pct": 17.89,
+  "base_cost": 29.8551,
+  "flexible_cost": 4.422,
+  "total_cost": 34.2771,
+  "peak_kw": 7.324,
+  "time_of_peak": "13:30",
+  "par": 2.495,
+  "comfort_violation_steps": 0,
+  "hvac_band_c": [
+    22.0,
+    26.0
+  ],
+  "washer_completed": true,
+  "washer_completed_by_step": 27,
+  "washer_deadline_step": 42
+}
