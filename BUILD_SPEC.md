@@ -169,14 +169,14 @@ Keep the appliance set to exactly these two for the core thesis. Do not add EV /
 ## 8. Household / persona params (`household.yaml`)
 Small set of interpretable comfort parameters the LLM prompt is conditioned on and the MILP bands are derived from — e.g. `thermal_sensitivity` (tight vs loose band), `price_sensitivity` (a qualitative descriptor, not a number the LLM does math on), `deadline` for the shiftable load, `occupied_hours`. Representative households come from the SGSC clusters (Phase 0 selects them).
 
-## 9. Tariff (`tariff.yaml`, `CONFIRM` all numbers)
-Ausgrid-style residential TOU (illustrative placeholders — replace with a real current Ausgrid residential TOU schedule):
-- Peak (e.g. 14:00–20:00 weekdays): ~`$0.55/kWh`
-- Shoulder: ~`$0.22/kWh`
-- Off-peak (e.g. 22:00–07:00): ~`$0.12/kWh`
-- **CPP events:** on flagged days, override a 2–4 h window with a spike (e.g. `$1.00–$1.50/kWh`) to stress-test elasticity. Schedule of CPP days is config.
+## 9. Tariff (`tariff.yaml`)
+Window structure (peak/shoulder/off-peak hours, and the seasonal peak) follows Ausgrid's current residential TOU network periods (source: "Ausgrid residential TOU network periods, 2025–26"); the $/kWh rates are representative retail values on top of that network tariff, `CONFIRM` against a current retail plan:
+- Peak (15:00–21:00, every day, **summer Nov–Mar and winter Jun–Aug only**): `$0.55/kWh`. Apr–May and Sep–Oct have no peak season — that window falls back to the shoulder rate.
+- Shoulder (07:00–15:00 and 21:00–22:00, every day): `$0.28/kWh`
+- Off-peak (22:00–07:00, every day): `$0.22/kWh`
+- **CPP events:** on flagged days, override a 2–4 h window with a spike. Two severities are configured for sensitivity: moderate `$1.20/kWh` (the default demo event, on the Phase 1 hot day `2013-01-18`) and severe `$2.50/kWh` `CONFIRM`. Schedule of CPP days is config.
 
-`tariff.rate_at(t)` returns `(rate, is_cpp)`. Unit-test it against the table.
+`tariff.rate_at(t, date)` returns `(rate, is_cpp)`; the peak season and weekday both depend on `date`. Unit-tested against the table, including the seasonal peak gate and the CPP severities (`tests/test_tariff.py`).
 
 ## 10. Elasticity estimator (`analysis/elasticity.py`) — the key metric
 
@@ -227,6 +227,6 @@ LLM calls = appliances × steps × seeds × households × models. For one day: 2
 
 ### Open items to close before reporting results
 - Exact current model IDs (primary + ablation).
-- Real Ausgrid residential TOU numbers + a defensible CPP schedule.
+- TOU *windows* now follow Ausgrid's current residential network periods (§9); the $/kWh rates on top of them are still representative retail placeholders — CONFIRM against a current retail plan. CPP severities ($1.20 / $2.50) are still illustrative.
 - Appliance nameplate params (HVAC kW/COP, RC values, washer kW/duration).
 - Final population size N.

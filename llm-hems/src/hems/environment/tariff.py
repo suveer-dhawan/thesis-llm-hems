@@ -54,8 +54,11 @@ class Window:
     days: tuple[str, ...]
     start: str
     end: str
+    months: tuple[int, ...] | None = None  # None = applies in every month
 
-    def matches(self, weekday_abbrev: str, t_minutes: int) -> bool:
+    def matches(self, weekday_abbrev: str, t_minutes: int, month: int) -> bool:
+        if self.months is not None and month not in self.months:
+            return False
         return weekday_abbrev in self.days and _time_in_window(t_minutes, self.start, self.end)
 
 
@@ -64,6 +67,7 @@ class CppEvent:
     date: dt.date
     start: str
     end: str
+    rate: float
 
     def matches(self, date: dt.date, t_minutes: int) -> bool:
         return date == self.date and _time_in_window(t_minutes, self.start, self.end)
@@ -82,12 +86,14 @@ class Tariff:
         self.off_peak_windows = self._parse_windows(rates["off_peak"].get("windows", []))
 
         cpp = config.get("cpp", {})
-        self.cpp_rate = float(cpp["rate"]) if "rate" in cpp else None
+        severities = {k: float(v) for k, v in cpp.get("rates", {}).items()}
+        self.cpp_severity_rates = severities
         self.cpp_events = [
             CppEvent(
                 date=dt.date.fromisoformat(e["date"]),
                 start=e["start"],
                 end=e["end"],
+                rate=float(e["rate"]) if "rate" in e else severities[e["severity"]],
             )
             for e in cpp.get("events", [])
         ]
@@ -95,7 +101,13 @@ class Tariff:
     @staticmethod
     def _parse_windows(windows: list[dict]) -> list[Window]:
         return [
-            Window(days=tuple(w["days"]), start=w["start"], end=w["end"]) for w in windows
+            Window(
+                days=tuple(w["days"]),
+                start=w["start"],
+                end=w["end"],
+                months=tuple(w["months"]) if "months" in w else None,
+            )
+            for w in windows
         ]
 
     @classmethod
@@ -114,14 +126,17 @@ class Tariff:
 
         for event in self.cpp_events:
             if event.matches(date, t_minutes):
-                return RateResult(rate=self.cpp_rate, is_cpp=True)
+                return RateResult(rate=event.rate, is_cpp=True)
 
         weekday = _DAY_ABBREV[date.weekday()]
+        month = date.month
 
-        if any(w.matches(weekday, t_minutes) for w in self.peak_windows):
+        if any(w.matches(weekday, t_minutes, month) for w in self.peak_windows):
             return RateResult(rate=self.peak_rate, is_cpp=False)
-        if any(w.matches(weekday, t_minutes) for w in self.off_peak_windows):
+        if any(w.matches(weekday, t_minutes, month) for w in self.off_peak_windows):
             return RateResult(rate=self.off_peak_rate, is_cpp=False)
-        if any(w.matches(weekday, t_minutes) for w in self.shoulder_windows):
+        if any(w.matches(weekday, t_minutes, month) for w in self.shoulder_windows):
             return RateResult(rate=self.shoulder_rate, is_cpp=False)
+        # No window matched (e.g. the 15:00-21:00 slot outside peak season) --
+        # shoulder is the schedule's catch-all rate.
         return RateResult(rate=self.shoulder_rate, is_cpp=False)
