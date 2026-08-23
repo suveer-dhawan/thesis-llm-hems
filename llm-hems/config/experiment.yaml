@@ -1,0 +1,25 @@
+# Ties config/{appliances,tariff,household}.yaml together for one run --
+# BUILD_SPEC.md §3, §6.3. Every run writes its fully resolved config + seed
+# into its results folder (design principle §2.3).
+
+agent: stub                      # CONFIRM: stub | milp | noisy_milp | llm -- only "stub" runnable so far
+
+horizon_days: 1                  # BUILD_SPEC.md §4: default one day = 48 steps; extend for elasticity
+steps_per_day: 48
+
+seed: 42                         # CONFIRM: placeholder base seed
+n_seeds: 3                       # BUILD_SPEC.md §6.3: default 3 seeds per scenario; report spread
+
+llm:
+  primary_model: null            # CONFIRM: exact current model id, e.g. "claude-sonnet-5"
+  ablation_model: null           # CONFIRM: exact current model id, second provider/model
+  temperature: 0.0               # CONFIRM: placeholder
+  dry_run: true                  # BUILD_SPEC.md §15: stub agent for pipeline testing without spend
+
+noisy_milp:
+  comfort_band_jitter_c: 0.5     # CONFIRM: placeholder
+  setpoint_jitter_c: 0.5         # CONFIRM: placeholder
+  deadline_jitter_steps: 1       # CONFIRM: placeholder
+  price_noise_std: 0.0           # CONFIRM: placeholder
+
+results_dir: results             # timestamped run folders written here (gitignored)

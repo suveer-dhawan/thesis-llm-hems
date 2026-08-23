@@ -1,0 +1,20 @@
+# Controllable appliance nameplate params -- BUILD_SPEC.md §7.
+# All values are CONFIRM placeholders. Keep the appliance set to exactly
+# these two for the core thesis (no EV/battery unless Phase 3 finishes early).
+
+hvac:
+  rated_kw: 2.0          # CONFIRM: placeholder
+  cop: 3.0                # CONFIRM: placeholder (coefficient of performance)
+  r: 1.0                  # CONFIRM: thermal resistance, placeholder -- calibrate
+                           #   so the house drifts a few degC/hr with HVAC off
+  c: 1.0                  # CONFIRM: thermal capacitance, placeholder -- see above
+  setpoint_c: 24.0         # CONFIRM: placeholder
+  tolerance_band_c: 2.0    # CONFIRM: placeholder (+/- degC hard comfort band)
+  outdoor_temp_profile: synthetic_summer_day  # CONFIRM: placeholder -- or SGSC-region temp if available
+
+shiftable_washing_machine:
+  duration_steps: 4        # CONFIRM: placeholder = 2h at 30-min steps
+  power_kw: 0.8             # CONFIRM: placeholder
+  interruptible: false       # fixed by design (§5), not CONFIRM
+  released_step: null        # CONFIRM: earliest start step -- set per household.yaml
+  deadline_step: null        # CONFIRM: must-finish-by step (e.g. 21:00) -- set per household.yaml

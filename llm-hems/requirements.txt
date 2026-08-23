@@ -1,0 +1,15 @@
+# BUILD_SPEC.md §14 stack.
+python-dotenv
+pulp
+pandas
+numpy
+pydantic
+matplotlib
+pyyaml
+pytest
+ruff
+
+# LLM SDKs -- provider choice is CONFIRM (§16 open items); add once decided,
+# behind src/hems/llm/client.py so neither leaks into agent logic (§14).
+anthropic
+openai

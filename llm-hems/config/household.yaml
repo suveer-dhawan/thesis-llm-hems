@@ -1,0 +1,18 @@
+# Persona / comfort params -- BUILD_SPEC.md §8.
+# Small, interpretable set the LLM prompt is conditioned on and the MILP
+# comfort bands are derived from. All values are CONFIRM placeholders;
+# representative households should come from SGSC clusters (Phase 0).
+
+household_id: placeholder_household_01   # CONFIRM: replace with real SGSC household id
+
+thermal_sensitivity: moderate   # CONFIRM: placeholder -- qualitative: tight | moderate | loose
+                                  #   (drives HVAC comfort-band width)
+
+price_sensitivity: moderate     # CONFIRM: placeholder -- qualitative descriptor only,
+                                  #   NOT a number the LLM does math on (§8)
+
+deadline: "21:00"                # CONFIRM: placeholder -- shiftable load must finish by this time
+
+occupied_hours:                  # CONFIRM: placeholder -- when the household is home
+  start: "07:00"
+  end: "22:00"

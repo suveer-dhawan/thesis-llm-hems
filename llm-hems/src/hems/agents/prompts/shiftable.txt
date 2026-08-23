@@ -1,0 +1,9 @@
+# CONFIRM: placeholder prompt template -- not yet written.
+#
+# Responsibility (BUILD_SPEC.md §6.3): elicit a structured willingness-to-pay
+# (wtp) + one-line reason from the LLM for running the shiftable (washing
+# machine) load this interval, given steps_remaining_to_complete,
+# deadline_step, released_step, urgency, and household persona params. WTP
+# should rise as the deadline nears and be ~0 long before it's needed (§7).
+# Must NOT ask the LLM to compare wtp against cost -- Python owns that
+# comparison (halt rule, §6.3 step 3).
