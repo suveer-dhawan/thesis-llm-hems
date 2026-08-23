@@ -5,8 +5,12 @@ data/*
 results/*
 !results/data_profile/
 !results/data_profile/**
+!results/phase1/
+!results/phase1/**
 __pycache__/
 *.pyc
 .venv/
+*.egg-info/
+.DS_Store
 
 Thesis/

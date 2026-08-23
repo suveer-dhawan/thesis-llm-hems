@@ -90,6 +90,16 @@ return RunResult(load_curve, total_cost, decision_log)
 
 Base (uncontrollable) load for each interval comes from the SGSC profile so the household's aggregate curve is realistic; the controllable appliances are added on top.
 
+### Base load vs. flexible layer (Phase 1 design decision)
+
+SGSC is a **whole-home aggregate** meter reading — it cannot be disaggregated into per-appliance traces. Rather than pretend otherwise, the simulator treats each sampled household's SGSC curve as its **fixed, non-controllable base load** exactly as metered, and adds HVAC + the washer on top as an **explicit flexible layer** that the agent controls. This means the SGSC curve's own historical AC/appliance behaviour is *not* subtracted out before the synthetic flexible layer is added — the flexible layer is a deliberate modelling addition on top of the real aggregate, not a disaggregation of it. `total = base + flexible` at every step; `cost = total_kwh * rate` (the bill doesn't distinguish base from flexible — only the flexible portion is within the agent's control).
+
+The flexible appliances are sized (config-driven, `config/appliances.yaml`) so that under normal operation flexible energy is a **realistic ~10–25% of the household's daily total** (`flexible / (base + flexible)`), printed by every run as `flexible_share_pct`. For the Phase 1 reference household (`8596070`, a hot summer weekday, see below), a bang-bang thermostat calibration against `r=2.0, c=2.5` (5h RC time constant) gives HVAC ≈ 10–14 kWh/day depending on control policy, plus a fixed 1.6 kWh washer cycle, landing flexible share at **~17–21%** of the day's total — inside the target band.
+
+Because elasticity (Phase 3) is defined as a *whole-household* price response, `simulator.py` always tracks `base`, `flexible`, and `total` load (and cost) **separately at every step**, never collapsing them early — elasticity will be measured on `total`, matching a whole-household elasticity definition, while `flexible` remains available for per-appliance diagnostics.
+
+Units, kept consistent everywhere in the codebase: SGSC cells and all appliance energy figures are **kWh per 30-min step**; `kW = kWh_per_step * 2`; `cost($) = energy(kWh) * rate($/kWh)`.
+
 ## 5. Agent interface
 
 ```python

@@ -5,12 +5,18 @@
 hvac:
   rated_kw: 2.0          # CONFIRM: placeholder
   cop: 3.0                # CONFIRM: placeholder (coefficient of performance)
-  r: 1.0                  # CONFIRM: thermal resistance, placeholder -- calibrate
-                           #   so the house drifts a few degC/hr with HVAC off
-  c: 1.0                  # CONFIRM: thermal capacitance, placeholder -- see above
+  r: 2.0                  # CONFIRM: thermal resistance (degC/kW), placeholder --
+                           #   r*c = 5h time constant so the house drifts ~1-2 degC/hr
+                           #   with HVAC off (calibrated, see BUILD_SPEC.md "Base load
+                           #   vs flexible layer")
+  c: 2.5                  # CONFIRM: thermal capacitance (kWh/degC), placeholder -- see above
   setpoint_c: 24.0         # CONFIRM: placeholder
   tolerance_band_c: 2.0    # CONFIRM: placeholder (+/- degC hard comfort band)
-  outdoor_temp_profile: synthetic_summer_day  # CONFIRM: placeholder -- or SGSC-region temp if available
+  # Synthetic diurnal outdoor-temperature curve (SGSC has no weather data) --
+  # single cosine cycle, min overnight / max mid-afternoon. CONFIRM placeholders.
+  outdoor_temp_min_c: 22.0
+  outdoor_temp_max_c: 32.0
+  outdoor_temp_peak_hour: 15.0
 
 shiftable_washing_machine:
   duration_steps: 4        # CONFIRM: placeholder = 2h at 30-min steps

@@ -1,6 +1,11 @@
 # Ausgrid-style residential TOU tariff -- BUILD_SPEC.md §9.
 # Every rate below is an illustrative placeholder (CONFIRM): replace with a
 # real, current Ausgrid residential TOU schedule before results are reported.
+#
+# Units: rate is $/kWh. `tariff.rate_at(t, date)` returns (rate, is_cpp) for
+# a 30-min step `t` (0..47) on a given calendar `date` (weekday + CPP-event
+# lookup both depend on the date). windows are half-open [start, end); an
+# `end` earlier than `start` wraps past midnight (e.g. 22:00 -> 07:00).
 
 rates:
   peak:
@@ -11,7 +16,7 @@ rates:
         end: "20:00"
   shoulder:
     rate: 0.22          # CONFIRM: $/kWh, placeholder
-    windows: []          # CONFIRM: implicitly "everything not peak/off-peak"
+    windows: []          # implicitly "everything not peak/off-peak/cpp"
   off_peak:
     rate: 0.12          # CONFIRM: $/kWh, placeholder
     windows:             # CONFIRM: placeholder
@@ -19,11 +24,18 @@ rates:
         start: "22:00"
         end: "07:00"
 
-# CPP (Critical Peak Pricing) events: on flagged days, override a window
-# with a price spike to stress-test elasticity (§9, §10).
+# CPP (Critical Peak Pricing) events: on flagged calendar dates, a window
+# overrides the normal schedule with a price spike to stress-test elasticity
+# (§9, §10). `rate_min`/`rate_max` document the plausible spike range;
+# `events` is the actual seeded schedule consumed by `rate_at`. `2013-01-18`
+# is the hot summer weekday selected for Phase 1 (see BUILD_SPEC.md "Base
+# load vs flexible layer") -- used here as a demo CPP event, not yet a
+# calibrated real-world date.
 cpp:
-  rate_min: 1.00        # CONFIRM: $/kWh, placeholder
-  rate_max: 1.50        # CONFIRM: $/kWh, placeholder
-  window_hours_min: 2   # CONFIRM: placeholder
-  window_hours_max: 4   # CONFIRM: placeholder
-  event_days: []         # CONFIRM: schedule of CPP days, placeholder -- e.g. ["2026-01-15"]
+  rate: 1.25             # CONFIRM: $/kWh, placeholder (within [rate_min, rate_max])
+  rate_min: 1.00         # CONFIRM: $/kWh, placeholder
+  rate_max: 1.50         # CONFIRM: $/kWh, placeholder
+  events:                 # CONFIRM: schedule of CPP event windows, placeholder
+    - date: "2013-01-18"
+      start: "17:00"
+      end: "20:00"
