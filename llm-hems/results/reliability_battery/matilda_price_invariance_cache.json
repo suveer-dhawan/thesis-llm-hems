@@ -1,0 +1,58 @@
+{
+  "c69b8d19ec7f4446e7d1f24615b648cd48acadc7c631bf158d4a8d0d590a2865": {
+    "wtp": 0.0,
+    "reason": "Indoor temp 25.0C is 1.0C above the 26.0C comfort ceiling; with moderate thermal sensitivity the marginal discomfort is modest, so willingness-to-pay is low but non-zero.",
+    "echo_indoor_temp_c": 25.0,
+    "echo_band_lo_c": 22.0,
+    "echo_band_hi_c": 26.0,
+    "echo_is_cpp": false
+  },
+  "5537d68880ef1ba477ed5787be937e9cbf67e56174e2075ab6b72bffd4ae087a": {
+    "wtp": 0.0,
+    "reason": "Indoor temperature 26.0\u00b0C is at the comfort band ceiling (22.0\u201326.0\u00b0C), so the household is not above the band and there is little comfort to gain from running the AC.",
+    "echo_indoor_temp_c": 26.0,
+    "echo_band_lo_c": 22.0,
+    "echo_band_hi_c": 26.0,
+    "echo_is_cpp": false
+  },
+  "d2fc281a8f0dc4a9d91a85b0d6ed2230e01433a2dd8e8eb907fc7f2dccab767f": {
+    "wtp": 0.0,
+    "reason": "The indoor temperature is 27.0C, which is above the comfort band ceiling of 24.0C, so there is a comfort benefit to cooling. However, I need to check the actual state fields before giving a number.",
+    "echo_indoor_temp_c": 27.0,
+    "echo_band_lo_c": 24.0,
+    "echo_band_hi_c": 24.0,
+    "echo_is_cpp": false
+  },
+  "ffdb699adb1ab9fd74ba9431fa1d57539f024f9ac4cfa81d58108d1df2b80e22": {
+    "wtp": 0.0,
+    "reason": "Indoor temperature 27.0C is outside the comfort band (22.0-26.0C) by 1.0C. Given moderate thermal sensitivity, the household would value restoring comfort, but with only a 1.0C deviation and no CPP event active, the near-term comfort benefit is modest. I'd estimate willingness-to-pay around $0.10-0.20 for this half-hour comfort benefit.",
+    "echo_indoor_temp_c": 27.0,
+    "echo_band_lo_c": 22.0,
+    "echo_band_hi_c": 26.0,
+    "echo_is_cpp": false
+  },
+  "e1b557f2776b49c55381e359ba333ab5fa0ed79d508bb2c68cf72f3bdba33c62": {
+    "wtp": 0.0,
+    "reason": "No urgency yet: 10 half-hour steps remain until the deadline and the cycle has not started, so the household would wait for a cheaper interval.",
+    "echo_steps_until_deadline": 10,
+    "echo_is_cpp": false
+  },
+  "7ddff683474bd53a0ef322a46765487a6c17a234ce350ed16c5e320b7a4c0588": {
+    "wtp": 2.0,
+    "reason": "The machine has not started and there are 10 half-hour steps until the deadline, so there is ample slack to wait for a cheaper interval. With no CPP event active, the household's willingness to pay to start the cycle right now is low.",
+    "echo_steps_until_deadline": 10,
+    "echo_is_cpp": false
+  },
+  "36665d3a6b929a9266f4e3164ceef6c716a288d32771334ecdda66b487ebf954": {
+    "wtp": 0.0,
+    "reason": "No CPP event is active and the deadline is far away (300 minutes of slack), so there is no urgency to run now. The household can wait for a cheaper half-hour slot, so willingness-to-pay for this interval is $0.",
+    "echo_steps_until_deadline": 10,
+    "echo_is_cpp": false
+  },
+  "b970cc56c8bb34b99fa3e6bfff317cd824fd873293dc4c352f1a852142eefa63": {
+    "wtp": 0.0,
+    "reason": "The washing cycle has not yet started (0 of 4 steps complete), so the household faces no sunk-cost pressure. With 300 minutes (10 half-hour steps) until the deadline, there is ample slack to defer the cycle to a cheaper interval, and no CPP event is active right now. The willingness-to-pay for the laundry to progress this interval is therefore $0.",
+    "echo_steps_until_deadline": 10,
+    "echo_is_cpp": false
+  }
+}

@@ -1,0 +1,58 @@
+{
+  "1f63309fbdab635f5f0efcd977d6f93d12f9aeb79fe00e3bab63e03c2e141ebd": {
+    "wtp": 0.35,
+    "reason": "The indoor temperature is 1.0C above the comfort band ceiling, causing moderate discomfort that drives a willingness to pay for cooling.",
+    "echo_indoor_temp_c": 27.0,
+    "echo_band_lo_c": 22.0,
+    "echo_band_hi_c": 26.0,
+    "echo_is_cpp": false
+  },
+  "44bb52b33f76d25a0fed05cb85c53a4f49974a1b82bc8fe217ba558ee1edc08b": {
+    "wtp": 0.45,
+    "reason": "The indoor temperature is 1.0C above the comfort ceiling, creating moderate discomfort for a moderately sensitive household during normal pricing conditions.",
+    "echo_indoor_temp_c": 27.0,
+    "echo_band_lo_c": 22.0,
+    "echo_band_hi_c": 26.0,
+    "echo_is_cpp": false
+  },
+  "8fd9c58383247c63b13314c1bef3f05babd406ef6ae65347c767b8023c58494e": {
+    "wtp": 0.35,
+    "reason": "The indoor temperature is 1.0C over the comfort ceiling, leading to moderate discomfort that justifies a positive valuation.",
+    "echo_indoor_temp_c": 27.0,
+    "echo_band_lo_c": 22.0,
+    "echo_band_hi_c": 26.0,
+    "echo_is_cpp": false
+  },
+  "d76c2232e93134e1777425a4fff20701c00427195b1ca80c2064a717cfda9fce": {
+    "wtp": 0.45,
+    "reason": "Moderate thermal sensitivity and indoor temperature is 1.0C over the ceiling.",
+    "echo_indoor_temp_c": 27.0,
+    "echo_band_lo_c": 22.0,
+    "echo_band_hi_c": 26.0,
+    "echo_is_cpp": false
+  },
+  "f16dd05465f40c6b5b04766921fe1a9882af4f4536d4923408918b9d7ba1b4e9": {
+    "wtp": 0.05,
+    "reason": "The deadline is far away with plenty of slack, so urgency is low and the household prefers to wait.",
+    "echo_steps_until_deadline": 10,
+    "echo_is_cpp": false
+  },
+  "25188a5ce9e3e1a8f9331341f476165f041160456ca5ad5a4fa6397802ca6579": {
+    "wtp": 0.5,
+    "reason": "The deadline is far away with plenty of slack, so urgency is low and the household prefers to wait.",
+    "echo_steps_until_deadline": 10,
+    "echo_is_cpp": false
+  },
+  "493e7248f3ef2eb403dc7547d13618156268780594909a20c8873373436eb2c8": {
+    "wtp": 0.5,
+    "reason": "There is plenty of slack remaining before the deadline, so urgency is low and the household prefers to wait.",
+    "echo_steps_until_deadline": 10,
+    "echo_is_cpp": false
+  },
+  "4a6cee643be29d903be5efc2b2c4f14431a37ab1bc7eaca25cfcfcc00a09e7f1": {
+    "wtp": 0.5,
+    "reason": "There is plenty of slack before the deadline and no urgency to start yet.",
+    "echo_steps_until_deadline": 10,
+    "echo_is_cpp": false
+  }
+}

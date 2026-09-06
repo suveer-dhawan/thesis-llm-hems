@@ -1,0 +1,569 @@
+{
+  "meta": {
+    "matilda": {
+      "provider": "matilda",
+      "model_id": "matilda (routing internal, unexposed by API)",
+      "sdk_version": "matilda-client==0.3.0"
+    },
+    "gemini": {
+      "provider": "gemini",
+      "model_id": "gemini-3.5-flash-lite",
+      "sdk_version": "google-genai==2.22.0"
+    }
+  },
+  "overall_misread_rate": {
+    "matilda": {
+      "n_calls": 26,
+      "misread_rate": 0.3846
+    },
+    "gemini": {
+      "n_calls": 26,
+      "misread_rate": 0.0
+    }
+  },
+  "state_battery_summary": {
+    "matilda": {
+      "n_calls": 18,
+      "misread_rate": 0.3889,
+      "field_misread_rates": {
+        "indoor_temp_c": 0.1667,
+        "band_lo_c": 0.1667,
+        "band_hi_c": 0.0,
+        "is_cpp": 0.1667
+      }
+    },
+    "gemini": {
+      "n_calls": 18,
+      "misread_rate": 0.0,
+      "field_misread_rates": {
+        "indoor_temp_c": 0.0,
+        "band_lo_c": 0.0,
+        "band_hi_c": 0.0,
+        "is_cpp": 0.0
+      }
+    }
+  },
+  "state_battery_raw": {
+    "matilda": [
+      {
+        "provider": "matilda",
+        "indoor_level": "in_band",
+        "indoor_temp_c": 24.0,
+        "is_cpp": false,
+        "rate": 0.22,
+        "wtp": 0.0,
+        "run": false,
+        "misreads": [],
+        "misread": false
+      },
+      {
+        "provider": "matilda",
+        "indoor_level": "in_band",
+        "indoor_temp_c": 24.0,
+        "is_cpp": false,
+        "rate": 0.55,
+        "wtp": 0.0,
+        "run": false,
+        "misreads": [],
+        "misread": false
+      },
+      {
+        "provider": "matilda",
+        "indoor_level": "in_band",
+        "indoor_temp_c": 24.0,
+        "is_cpp": false,
+        "rate": 1.2,
+        "wtp": 0.0,
+        "run": false,
+        "misreads": [],
+        "misread": false
+      },
+      {
+        "provider": "matilda",
+        "indoor_level": "in_band",
+        "indoor_temp_c": 24.0,
+        "is_cpp": true,
+        "rate": 0.22,
+        "wtp": 0.0,
+        "run": false,
+        "misreads": [],
+        "misread": false
+      },
+      {
+        "provider": "matilda",
+        "indoor_level": "in_band",
+        "indoor_temp_c": 24.0,
+        "is_cpp": true,
+        "rate": 0.55,
+        "wtp": 0.0,
+        "run": false,
+        "misreads": [],
+        "misread": false
+      },
+      {
+        "provider": "matilda",
+        "indoor_level": "in_band",
+        "indoor_temp_c": 24.0,
+        "is_cpp": true,
+        "rate": 1.2,
+        "wtp": 1.25,
+        "run": true,
+        "misreads": [],
+        "misread": false
+      },
+      {
+        "provider": "matilda",
+        "indoor_level": "mild_over",
+        "indoor_temp_c": 27.0,
+        "is_cpp": false,
+        "rate": 0.22,
+        "wtp": 0.0,
+        "run": false,
+        "misreads": [],
+        "misread": false
+      },
+      {
+        "provider": "matilda",
+        "indoor_level": "mild_over",
+        "indoor_temp_c": 27.0,
+        "is_cpp": false,
+        "rate": 0.55,
+        "wtp": 0.0,
+        "run": false,
+        "misreads": [
+          "band_lo_c"
+        ],
+        "misread": true
+      },
+      {
+        "provider": "matilda",
+        "indoor_level": "mild_over",
+        "indoor_temp_c": 27.0,
+        "is_cpp": false,
+        "rate": 1.2,
+        "wtp": 0.0,
+        "run": false,
+        "misreads": [
+          "band_lo_c"
+        ],
+        "misread": true
+      },
+      {
+        "provider": "matilda",
+        "indoor_level": "mild_over",
+        "indoor_temp_c": 27.0,
+        "is_cpp": true,
+        "rate": 0.22,
+        "wtp": 3.5,
+        "run": true,
+        "misreads": [],
+        "misread": false
+      },
+      {
+        "provider": "matilda",
+        "indoor_level": "mild_over",
+        "indoor_temp_c": 27.0,
+        "is_cpp": true,
+        "rate": 0.55,
+        "wtp": 1.8,
+        "run": true,
+        "misreads": [
+          "indoor_temp_c"
+        ],
+        "misread": true
+      },
+      {
+        "provider": "matilda",
+        "indoor_level": "mild_over",
+        "indoor_temp_c": 27.0,
+        "is_cpp": true,
+        "rate": 1.2,
+        "wtp": 0.0,
+        "run": false,
+        "misreads": [
+          "is_cpp"
+        ],
+        "misread": true
+      },
+      {
+        "provider": "matilda",
+        "indoor_level": "far_over",
+        "indoor_temp_c": 30.0,
+        "is_cpp": false,
+        "rate": 0.22,
+        "wtp": 0.0,
+        "run": false,
+        "misreads": [],
+        "misread": false
+      },
+      {
+        "provider": "matilda",
+        "indoor_level": "far_over",
+        "indoor_temp_c": 30.0,
+        "is_cpp": false,
+        "rate": 0.55,
+        "wtp": 0.0,
+        "run": false,
+        "misreads": [],
+        "misread": false
+      },
+      {
+        "provider": "matilda",
+        "indoor_level": "far_over",
+        "indoor_temp_c": 30.0,
+        "is_cpp": false,
+        "rate": 1.2,
+        "wtp": 1.02,
+        "run": false,
+        "misreads": [],
+        "misread": false
+      },
+      {
+        "provider": "matilda",
+        "indoor_level": "far_over",
+        "indoor_temp_c": 30.0,
+        "is_cpp": true,
+        "rate": 0.22,
+        "wtp": 0.0,
+        "run": false,
+        "misreads": [
+          "indoor_temp_c",
+          "is_cpp"
+        ],
+        "misread": true
+      },
+      {
+        "provider": "matilda",
+        "indoor_level": "far_over",
+        "indoor_temp_c": 30.0,
+        "is_cpp": true,
+        "rate": 0.55,
+        "wtp": 0.0,
+        "run": false,
+        "misreads": [
+          "indoor_temp_c",
+          "band_lo_c"
+        ],
+        "misread": true
+      },
+      {
+        "provider": "matilda",
+        "indoor_level": "far_over",
+        "indoor_temp_c": 30.0,
+        "is_cpp": true,
+        "rate": 1.2,
+        "wtp": 0.0,
+        "run": false,
+        "misreads": [
+          "is_cpp"
+        ],
+        "misread": true
+      }
+    ],
+    "gemini": [
+      {
+        "provider": "gemini",
+        "indoor_level": "in_band",
+        "indoor_temp_c": 24.0,
+        "is_cpp": false,
+        "rate": 0.22,
+        "wtp": 0.05,
+        "run": false,
+        "misreads": [],
+        "misread": false
+      },
+      {
+        "provider": "gemini",
+        "indoor_level": "in_band",
+        "indoor_temp_c": 24.0,
+        "is_cpp": false,
+        "rate": 0.55,
+        "wtp": 0.05,
+        "run": false,
+        "misreads": [],
+        "misread": false
+      },
+      {
+        "provider": "gemini",
+        "indoor_level": "in_band",
+        "indoor_temp_c": 24.0,
+        "is_cpp": false,
+        "rate": 1.2,
+        "wtp": 0.05,
+        "run": false,
+        "misreads": [],
+        "misread": false
+      },
+      {
+        "provider": "gemini",
+        "indoor_level": "in_band",
+        "indoor_temp_c": 24.0,
+        "is_cpp": true,
+        "rate": 0.22,
+        "wtp": 0.05,
+        "run": false,
+        "misreads": [],
+        "misread": false
+      },
+      {
+        "provider": "gemini",
+        "indoor_level": "in_band",
+        "indoor_temp_c": 24.0,
+        "is_cpp": true,
+        "rate": 0.55,
+        "wtp": 0.05,
+        "run": false,
+        "misreads": [],
+        "misread": false
+      },
+      {
+        "provider": "gemini",
+        "indoor_level": "in_band",
+        "indoor_temp_c": 24.0,
+        "is_cpp": true,
+        "rate": 1.2,
+        "wtp": 0.05,
+        "run": false,
+        "misreads": [],
+        "misread": false
+      },
+      {
+        "provider": "gemini",
+        "indoor_level": "mild_over",
+        "indoor_temp_c": 27.0,
+        "is_cpp": false,
+        "rate": 0.22,
+        "wtp": 0.35,
+        "run": true,
+        "misreads": [],
+        "misread": false
+      },
+      {
+        "provider": "gemini",
+        "indoor_level": "mild_over",
+        "indoor_temp_c": 27.0,
+        "is_cpp": false,
+        "rate": 0.55,
+        "wtp": 1.25,
+        "run": true,
+        "misreads": [],
+        "misread": false
+      },
+      {
+        "provider": "gemini",
+        "indoor_level": "mild_over",
+        "indoor_temp_c": 27.0,
+        "is_cpp": false,
+        "rate": 1.2,
+        "wtp": 0.35,
+        "run": false,
+        "misreads": [],
+        "misread": false
+      },
+      {
+        "provider": "gemini",
+        "indoor_level": "mild_over",
+        "indoor_temp_c": 27.0,
+        "is_cpp": true,
+        "rate": 0.22,
+        "wtp": 1.25,
+        "run": true,
+        "misreads": [],
+        "misread": false
+      },
+      {
+        "provider": "gemini",
+        "indoor_level": "mild_over",
+        "indoor_temp_c": 27.0,
+        "is_cpp": true,
+        "rate": 0.55,
+        "wtp": 1.25,
+        "run": true,
+        "misreads": [],
+        "misread": false
+      },
+      {
+        "provider": "gemini",
+        "indoor_level": "mild_over",
+        "indoor_temp_c": 27.0,
+        "is_cpp": true,
+        "rate": 1.2,
+        "wtp": 1.5,
+        "run": true,
+        "misreads": [],
+        "misread": false
+      },
+      {
+        "provider": "gemini",
+        "indoor_level": "far_over",
+        "indoor_temp_c": 30.0,
+        "is_cpp": false,
+        "rate": 0.22,
+        "wtp": 2.5,
+        "run": true,
+        "misreads": [],
+        "misread": false
+      },
+      {
+        "provider": "gemini",
+        "indoor_level": "far_over",
+        "indoor_temp_c": 30.0,
+        "is_cpp": false,
+        "rate": 0.55,
+        "wtp": 1.75,
+        "run": true,
+        "misreads": [],
+        "misread": false
+      },
+      {
+        "provider": "gemini",
+        "indoor_level": "far_over",
+        "indoor_temp_c": 30.0,
+        "is_cpp": false,
+        "rate": 1.2,
+        "wtp": 2.5,
+        "run": true,
+        "misreads": [],
+        "misread": false
+      },
+      {
+        "provider": "gemini",
+        "indoor_level": "far_over",
+        "indoor_temp_c": 30.0,
+        "is_cpp": true,
+        "rate": 0.22,
+        "wtp": 2.5,
+        "run": true,
+        "misreads": [],
+        "misread": false
+      },
+      {
+        "provider": "gemini",
+        "indoor_level": "far_over",
+        "indoor_temp_c": 30.0,
+        "is_cpp": true,
+        "rate": 0.55,
+        "wtp": 1.25,
+        "run": true,
+        "misreads": [],
+        "misread": false
+      },
+      {
+        "provider": "gemini",
+        "indoor_level": "far_over",
+        "indoor_temp_c": 30.0,
+        "is_cpp": true,
+        "rate": 1.2,
+        "wtp": 1.25,
+        "run": true,
+        "misreads": [],
+        "misread": false
+      }
+    ]
+  },
+  "price_invariance": {
+    "matilda": {
+      "hvac": [
+        {
+          "rate": 0.22,
+          "wtp": 0.0,
+          "misreads": [
+            "indoor_temp_c"
+          ]
+        },
+        {
+          "rate": 0.55,
+          "wtp": 0.0,
+          "misreads": [
+            "indoor_temp_c"
+          ]
+        },
+        {
+          "rate": 1.2,
+          "wtp": 0.0,
+          "misreads": [
+            "band_lo_c",
+            "band_hi_c"
+          ]
+        },
+        {
+          "rate": 2.5,
+          "wtp": 0.0,
+          "misreads": []
+        }
+      ],
+      "washer": [
+        {
+          "rate": 0.22,
+          "wtp": 0.0,
+          "misreads": []
+        },
+        {
+          "rate": 0.55,
+          "wtp": 2.0,
+          "misreads": []
+        },
+        {
+          "rate": 1.2,
+          "wtp": 0.0,
+          "misreads": []
+        },
+        {
+          "rate": 2.5,
+          "wtp": 0.0,
+          "misreads": []
+        }
+      ],
+      "hvac_wtp_range": 0.0,
+      "washer_wtp_range": 2.0
+    },
+    "gemini": {
+      "hvac": [
+        {
+          "rate": 0.22,
+          "wtp": 0.35,
+          "misreads": []
+        },
+        {
+          "rate": 0.55,
+          "wtp": 0.45,
+          "misreads": []
+        },
+        {
+          "rate": 1.2,
+          "wtp": 0.35,
+          "misreads": []
+        },
+        {
+          "rate": 2.5,
+          "wtp": 0.45,
+          "misreads": []
+        }
+      ],
+      "washer": [
+        {
+          "rate": 0.22,
+          "wtp": 0.05,
+          "misreads": []
+        },
+        {
+          "rate": 0.55,
+          "wtp": 0.5,
+          "misreads": []
+        },
+        {
+          "rate": 1.2,
+          "wtp": 0.5,
+          "misreads": []
+        },
+        {
+          "rate": 2.5,
+          "wtp": 0.5,
+          "misreads": []
+        }
+      ],
+      "hvac_wtp_range": 0.1,
+      "washer_wtp_range": 0.45
+    }
+  }
+}

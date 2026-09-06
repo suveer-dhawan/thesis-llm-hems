@@ -1,0 +1,146 @@
+{
+  "8ec634e401052d1d2d67323e1378af2417a59412dab81777abd03fc58b89d79e": {
+    "wtp": 0.05,
+    "reason": "The indoor temperature is comfortably inside the band, so willingness to pay is low.",
+    "echo_indoor_temp_c": 24.0,
+    "echo_band_lo_c": 22.0,
+    "echo_band_hi_c": 26.0,
+    "echo_is_cpp": false
+  },
+  "8a9575e7de9361e4b6dadf2c94711552a8b0a1e8bbd084f4276ff082e535bd57": {
+    "wtp": 0.05,
+    "reason": "The indoor temperature is comfortably inside the band, so willingness to pay for cooling is very low.",
+    "echo_indoor_temp_c": 24.0,
+    "echo_band_lo_c": 22.0,
+    "echo_band_hi_c": 26.0,
+    "echo_is_cpp": false
+  },
+  "32b94abb17f69b9fc621150db64ec5110996e5b5be41cad672ae22f34b99695c": {
+    "wtp": 0.05,
+    "reason": "The indoor temperature is comfortably within the comfort band, so willingness to pay is low.",
+    "echo_indoor_temp_c": 24.0,
+    "echo_band_lo_c": 22.0,
+    "echo_band_hi_c": 26.0,
+    "echo_is_cpp": false
+  },
+  "9f28e4de89aaff7af87cb54a31dabbc26391c8459624e6d8eece268a3c4815e9": {
+    "wtp": 0.05,
+    "reason": "The indoor temperature is comfortably inside the comfort band, so willingness to pay for cooling is near zero despite an active CPP event.",
+    "echo_indoor_temp_c": 24.0,
+    "echo_band_lo_c": 22.0,
+    "echo_band_hi_c": 26.0,
+    "echo_is_cpp": true
+  },
+  "32f8fd454f1695250f10687edf82950ff208006e7c71a70a4a4daf86017ae557": {
+    "wtp": 0.05,
+    "reason": "The indoor temperature is comfortably within the band, leaving little comfort to gain.",
+    "echo_indoor_temp_c": 24.0,
+    "echo_band_lo_c": 22.0,
+    "echo_band_hi_c": 26.0,
+    "echo_is_cpp": true
+  },
+  "f977e5ea1247d304f76d88880983a0eb138b4c4dfd7264fabce52bccbe5d3dd4": {
+    "wtp": 0.05,
+    "reason": "The indoor temperature is comfortably within the band, so the value of running the AC is low.",
+    "echo_indoor_temp_c": 24.0,
+    "echo_band_lo_c": 22.0,
+    "echo_band_hi_c": 26.0,
+    "echo_is_cpp": true
+  },
+  "1f63309fbdab635f5f0efcd977d6f93d12f9aeb79fe00e3bab63e03c2e141ebd": {
+    "wtp": 0.35,
+    "reason": "The indoor temperature is 1.0C above the comfort band ceiling, and with moderate thermal sensitivity, the household has a moderate willingness to pay to cool the space down.",
+    "echo_indoor_temp_c": 27.0,
+    "echo_band_lo_c": 22.0,
+    "echo_band_hi_c": 26.0,
+    "echo_is_cpp": false
+  },
+  "44bb52b33f76d25a0fed05cb85c53a4f49974a1b82bc8fe217ba558ee1edc08b": {
+    "wtp": 1.25,
+    "reason": "Indoor temperature is 1.0C over the comfort ceiling, causing moderate discomfort that drives a willingness to pay for cooling.",
+    "echo_indoor_temp_c": 27.0,
+    "echo_band_lo_c": 22.0,
+    "echo_band_hi_c": 26.0,
+    "echo_is_cpp": false
+  },
+  "8fd9c58383247c63b13314c1bef3f05babd406ef6ae65347c767b8023c58494e": {
+    "wtp": 0.35,
+    "reason": "The indoor temperature is moderately above the comfort band ceiling, and moderate thermal sensitivity leads to a reasonable willingness to pay for cooling.",
+    "echo_indoor_temp_c": 27.0,
+    "echo_band_lo_c": 22.0,
+    "echo_band_hi_c": 26.0,
+    "echo_is_cpp": false
+  },
+  "dbaaa481c0248d7fd20922c601121e22e030ae31b9ef1a97d2aec73277bda197": {
+    "wtp": 1.25,
+    "reason": "The indoor temperature is 1.0C above the comfort ceiling, leading to moderate discomfort that justifies a moderate willingness-to-pay.",
+    "echo_indoor_temp_c": 27.0,
+    "echo_band_lo_c": 22.0,
+    "echo_band_hi_c": 26.0,
+    "echo_is_cpp": true
+  },
+  "51bf43b79c6d96ac080d209fb2eb1946dc7471af58363913f0d075b268c4d9a6": {
+    "wtp": 1.25,
+    "reason": "The indoor temperature is 1.0C above the comfort band ceiling, and moderate thermal sensitivity leads to a moderate valuation for cooling.",
+    "echo_indoor_temp_c": 27.0,
+    "echo_band_lo_c": 22.0,
+    "echo_band_hi_c": 26.0,
+    "echo_is_cpp": true
+  },
+  "8ce99fb7b2951a023eeb3965a0e848e9558fc93792aa0a1ed986a7a3c640b5eb": {
+    "wtp": 1.5,
+    "reason": "The indoor temperature is 1.0C above the comfort band ceiling, and with moderate thermal sensitivity, the household values cooling to restore comfort.",
+    "echo_indoor_temp_c": 27.0,
+    "echo_band_lo_c": 22.0,
+    "echo_band_hi_c": 26.0,
+    "echo_is_cpp": true
+  },
+  "60938e283b7dba517c61ffef06c26b00cab19161de3a78ed16ffd2de19b87aa9": {
+    "wtp": 2.5,
+    "reason": "The indoor temperature is 4.0C above the comfort ceiling, creating significant discomfort for a moderately sensitive household during normal pricing.",
+    "echo_indoor_temp_c": 30.0,
+    "echo_band_lo_c": 22.0,
+    "echo_band_hi_c": 26.0,
+    "echo_is_cpp": false
+  },
+  "9a33f8904eb35e9b41150984d7d6c8ea242fd4278da01a01ece1dddb881c43c4": {
+    "wtp": 1.75,
+    "reason": "The indoor temperature is 4.0C over the ceiling of the comfort band, causing significant discomfort that moderate thermal sensitivity drives them to value mitigating.",
+    "echo_indoor_temp_c": 30.0,
+    "echo_band_lo_c": 22.0,
+    "echo_band_hi_c": 26.0,
+    "echo_is_cpp": false
+  },
+  "c0e785da28b307b14eb4b5f19a41e8065e94b89f506a4593ac40788a165c1b1f": {
+    "wtp": 2.5,
+    "reason": "The indoor temperature is 4.0C over the comfort ceiling, causing significant discomfort that the moderate-sensitivity household wishes to reduce.",
+    "echo_indoor_temp_c": 30.0,
+    "echo_band_lo_c": 22.0,
+    "echo_band_hi_c": 26.0,
+    "echo_is_cpp": false
+  },
+  "c3d363388b1913ba6f0949f4b191d9627acd651b229a4ae36094ec5aad286c43": {
+    "wtp": 2.5,
+    "reason": "The indoor temperature is significantly above the comfort band ceiling during an active CPP event, creating substantial discomfort to avoid.",
+    "echo_indoor_temp_c": 30.0,
+    "echo_band_lo_c": 22.0,
+    "echo_band_hi_c": 26.0,
+    "echo_is_cpp": true
+  },
+  "cb9ffcb2d7f89f93f1ed49b233cb2abb9adacee8018d9b383607b348b9ffe9b1": {
+    "wtp": 1.25,
+    "reason": "Indoor temperature is moderately above the comfort band ceiling, causing discomfort which drives moderate willingness-to-pay.",
+    "echo_indoor_temp_c": 30.0,
+    "echo_band_lo_c": 22.0,
+    "echo_band_hi_c": 26.0,
+    "echo_is_cpp": true
+  },
+  "8141b56656ee02d73650594c83fdb5cf137154fb8e829372ffce75bbfac3926c": {
+    "wtp": 1.25,
+    "reason": "The indoor temperature is 4.0C over the comfort band ceiling during an active CPP event, creating significant discomfort that moderate thermal sensitivity seeks to mitigate.",
+    "echo_indoor_temp_c": 30.0,
+    "echo_band_lo_c": 22.0,
+    "echo_band_hi_c": 26.0,
+    "echo_is_cpp": true
+  }
+}

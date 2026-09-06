@@ -9,7 +9,13 @@ pyyaml
 pytest
 ruff
 
-# LLM SDKs -- provider choice is CONFIRM (§16 open items); add once decided,
-# behind src/hems/llm/client.py so neither leaks into agent logic (§14).
-anthropic
-openai
+# LLM providers, kept behind src/hems/llm/client.py so neither leaks into
+# agent logic (§14).
+# - Maincode's Matilda API (Phase 2). Official async Python client. Matilda
+#   owns model/provider routing internally -- there is no model id or
+#   temperature/seed parameter to select.
+matilda-client
+# - Google's Gemini API, used for the multi-provider reliability comparison
+#   (experiments/reliability_battery.py). Structured JSON output via a
+#   pydantic response schema.
+google-genai

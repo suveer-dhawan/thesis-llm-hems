@@ -7,6 +7,8 @@ results/*
 !results/data_profile/**
 !results/phase1/
 !results/phase1/**
+!results/reliability_battery/
+!results/reliability_battery/**
 __pycache__/
 *.pyc
 .venv/

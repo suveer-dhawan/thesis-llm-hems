@@ -2,19 +2,65 @@
 # BUILD_SPEC.md §3, §6.3. Every run writes its fully resolved config + seed
 # into its results folder (design principle §2.3).
 
-agent: stub                      # CONFIRM: stub | milp | noisy_milp | llm -- llm not implemented until Phase 2
+agent: llm                       # stub | milp | noisy_milp | llm -- llm implemented Phase 2
 
 horizon_days: 1                  # BUILD_SPEC.md §4: default one day = 48 steps; extend for elasticity
 steps_per_day: 48
 
 seed: 42                         # CONFIRM: placeholder base seed
-n_seeds: 3                       # BUILD_SPEC.md §6.3: default 3 seeds per scenario; report spread
+n_seeds: 1                       # Phase 2 development value (BUILD_SPEC.md §6.3 default is 3 for
+                                  # reporting spread -- raise once the agent is stable; not currently
+                                  # wired to n independent LLM calls per step, see llm.dry_run note)
 
 llm:
-  primary_model: null            # CONFIRM: exact current model id, e.g. "claude-sonnet-5"
-  ablation_model: null           # CONFIRM: exact current model id, second provider/model
-  temperature: 0.0               # CONFIRM: placeholder
-  dry_run: true                  # BUILD_SPEC.md §15: stub agent for pipeline testing without spend
+  # Provider selection (BUILD_SPEC.md §14: LLM SDKs live behind llm/client.py
+  # so neither leaks into agent logic). `run_single.py --provider` overrides
+  # this per-run; the reliability battery (experiments/reliability_battery.py)
+  # runs both providers regardless of this setting.
+  provider: matilda              # matilda | gemini
+
+  matilda:
+    # Maincode's Matilda API (matilda-client SDK). Matilda owns model/provider
+    # routing internally -- chat.create_object exposes no `model`,
+    # `temperature`, or `seed` parameter, so there is nothing to CONFIRM here
+    # beyond the SDK version. REPRODUCIBILITY LIMITATION: since the model
+    # version and sampling behaviour behind each call are entirely
+    # provider-controlled and unpinned, `sdk_version` + `confirmed_date` below
+    # is the only trace of which API surface produced a given run's results --
+    # re-check `pip show matilda-client` before trusting a comparison against
+    # an older run. See README.md "Reproducibility: the LLM agent" and the
+    # run-to-run variance check in experiments/phase2_diagnostics.py --
+    # observed spread across 3 reps of the same day is logged in
+    # results/phase2_diagnostics/diagnostics_summary.json (run 2026-09-06).
+    base_url: https://matilda.maincode.com/api
+    sdk_version: matilda-client==0.3.0   # `pip show matilda-client`; bump when the SDK is upgraded
+    confirmed_date: "2026-09-06"         # date this pipeline last confirmed working end to end
+    model: null                    # not exposed by the API -- see note above
+    temperature: null              # not exposed by the API -- see note above
+    seed: null                     # not exposed by the API -- see note above
+
+  gemini:
+    # Google's google-genai SDK against the Gemini Developer API
+    # (GEMINI_API_KEY). CONFIRM before reporting results: model live-tested
+    # 2026-09-06 -- gemini-2.5-flash has been retired (API 404s and points to
+    # gemini-3.6-flash); gemini-3.8-flash exists but returned 503 "high
+    # demand" at test time. gemini-3.6-flash itself works but its free tier
+    # is capped at 20 requests/DAY per project+model, which a ~26-call
+    # battery exhausts by itself -- gemini-3.5-flash-lite (same Flash
+    # family, lighter tier) has no such daily ceiling and is the workable
+    # default here. Re-check both models' quotas before a later run.
+    model: gemini-3.5-flash-lite
+    sdk_version: null              # filled in from the installed package at runtime (llm/client.py)
+    rate_limit_rpm: 5              # observed free-tier cap for this model/key (2026-09-06): the API's
+                                    # own 429 response reported quota=5 req/min, not the commonly-cited
+                                    # 15 -- llm/client.py throttles calls to this before sending.
+    max_output_tokens: 2048        # generous: gemini-3.x "thinking" consumes hidden budget
+                                    # before the JSON body -- smaller values truncated responses
+                                    # in testing.
+
+  dry_run: false                 # BUILD_SPEC.md §15: --dry-run CLI flag overrides this for pipeline
+                                  # testing without spend; this default governs config-driven runs
+  cache_path: results/llm_cache.json   # disk cache of (provider, prompt) -> response, reused across runs
 
 noisy_milp:
   comfort_band_jitter_c: 0.5     # CONFIRM: placeholder

@@ -1,0 +1,146 @@
+{
+  "bb2f84d86521076d3099e0e05f26c5b8cfd4f063b09eb4e620d7749223879cbc": {
+    "wtp": 0.0,
+    "reason": "Indoor temperature is within the comfort band, so there is no discomfort to avoid during this interval.",
+    "echo_indoor_temp_c": 24.0,
+    "echo_band_lo_c": 22.0,
+    "echo_band_hi_c": 26.0,
+    "echo_is_cpp": false
+  },
+  "5a2d9761773e3079275dac142918ca7e8e8abb0946d2b4a1b2599f32f9532332": {
+    "wtp": 0.0,
+    "reason": "The indoor temperature is 24.0C, which is within the 22.0-26.0C comfort band, so there is no thermal discomfort to relieve and no additional comfort gained from running the AC this half-hour. With a moderate price sensitivity and normal (non-CPP) pricing, the household would not pay anything extra for cooling right now.",
+    "echo_indoor_temp_c": 24.0,
+    "echo_band_lo_c": 22.0,
+    "echo_band_hi_c": 26.0,
+    "echo_is_cpp": false
+  },
+  "3911a554e3b75e4007d01bdec4bb217cd68bbb87eb2966692b8517b1222f85c6": {
+    "wtp": 0.0,
+    "reason": "The household is currently within its comfort band (indoor 24.0\u00b0C, band 22.0\u201326.0\u00b0C), so there is no thermal discomfort to avoid and running the AC now delivers essentially no comfort gain this half-hour. With moderate price sensitivity and no CPP event active, willingness to pay for AC in this interval is effectively zero.",
+    "echo_indoor_temp_c": 24.0,
+    "echo_band_lo_c": 22.0,
+    "echo_band_hi_c": 26.0,
+    "echo_is_cpp": false
+  },
+  "e7de18775372cacd948f8bf3bdd7f91bf9fc862734bdc15f8d71d26ec29cfd35": {
+    "wtp": 0.0,
+    "reason": "The indoor temperature of 24.0\u00b0C is within the comfort band of 22.0-26.0\u00b0C, so there is no discomfort to relieve and little to no comfort benefit from running the AC this interval.",
+    "echo_indoor_temp_c": 24.0,
+    "echo_band_lo_c": 22.0,
+    "echo_band_hi_c": 26.0,
+    "echo_is_cpp": true
+  },
+  "f60984adfe4e51d5ddff4c9cdc64680d57e7a067d19cdae1c6d21c2be1e94c8b": {
+    "wtp": 0.0,
+    "reason": "Indoor temperature 24.0C is inside the comfort band (22.0-26.0C), so there is no thermal discomfort to relieve; the household would not pay for the AC's comfort benefit this interval.",
+    "echo_indoor_temp_c": 24.0,
+    "echo_band_lo_c": 22.0,
+    "echo_band_hi_c": 26.0,
+    "echo_is_cpp": true
+  },
+  "779d2662f0d83f6d6a6db74546ae908b0fbaaa2ee9562da77d0372ca0ccc7a50": {
+    "wtp": 1.25,
+    "reason": "Indoor temperature 24.0C sits inside the 22.0-26.0C comfort band, so the household is already comfortable and the marginal comfort benefit of running the AC is low. With moderate thermal sensitivity and a CPP event currently active, I would still assign a small positive value for the option to run, but it should be near zero.",
+    "echo_indoor_temp_c": 24.0,
+    "echo_band_lo_c": 22.0,
+    "echo_band_hi_c": 26.0,
+    "echo_is_cpp": true
+  },
+  "c69b8d19ec7f4446e7d1f24615b648cd48acadc7c631bf158d4a8d0d590a2865": {
+    "wtp": 0.0,
+    "reason": "Indoor temperature is 27.0\u00b0C, which is 1.0\u00b0C above the comfort band ceiling of 26.0\u00b0C. With a moderate willingness to pay and a CPP event not active, the household would value some cooling, but the willingness-to-pay estimate here is set to 0 based on the given state.",
+    "echo_indoor_temp_c": 27.0,
+    "echo_band_lo_c": 22.0,
+    "echo_band_hi_c": 26.0,
+    "echo_is_cpp": false
+  },
+  "5537d68880ef1ba477ed5787be937e9cbf67e56174e2075ab6b72bffd4ae087a": {
+    "wtp": 0.0,
+    "reason": "Indoor temperature is 27.0\u00b0C, which is 1.0\u00b0C above the comfort band ceiling of 26.0\u00b0C. The household is moderately price sensitive, and the CPP event is not active, so the comfort gain is real but mild. I estimate the value of avoiding this small discomfort at a low level.",
+    "echo_indoor_temp_c": 27.0,
+    "echo_band_lo_c": 24.0,
+    "echo_band_hi_c": 26.0,
+    "echo_is_cpp": false
+  },
+  "d2fc281a8f0dc4a9d91a85b0d6ed2230e01433a2dd8e8eb907fc7f2dccab767f": {
+    "wtp": 0.0,
+    "reason": "The indoor temperature is 27.0\u00b0C, which is 1.0\u00b0C above the comfort band ceiling of 26.0\u00b0C, so there is mild discomfort to avoid. However, the CPP event is NOT active (normal pricing), which means the household faces no CPP-based urgency to reduce load. With moderate price sensitivity and a CPP event inactive, the marginal value of running AC for this single interval is low, and the household would not pay extra to shift or avoid this usage. I therefore estimate a CPP-adjusted willingness-to-pay of $0 for this interval.",
+    "echo_indoor_temp_c": 27.0,
+    "echo_band_lo_c": 20.0,
+    "echo_band_hi_c": 26.0,
+    "echo_is_cpp": false
+  },
+  "d32698f91a6a0dbd711dd24f910ba35cba1d6b3d569ee429c6624b7b23494fa2": {
+    "wtp": 3.5,
+    "reason": "Indoor temperature is 27\u00b0C, which is 1\u00b0C above the 26\u00b0C ceiling of the comfort band. With moderate thermal sensitivity, the household would pay a small amount to avoid this mild discomfort by running the AC, but not a large premium.",
+    "echo_indoor_temp_c": 27.0,
+    "echo_band_lo_c": 22.0,
+    "echo_band_hi_c": 26.0,
+    "echo_is_cpp": true
+  },
+  "95f5fc7f987c771f7f8cabe0c4539f6fcb82df1e2c044682d8452ddfc66b1537": {
+    "wtp": 1.8,
+    "reason": "Indoor temperature is 25.0\u00b0C, which is inside the comfort band (22.0\u201326.0\u00b0C), so there is no comfort gain from running the AC. With moderate thermal sensitivity and no discomfort to avoid, willingness-to-pay is essentially $0.00.",
+    "echo_indoor_temp_c": 25.0,
+    "echo_band_lo_c": 22.0,
+    "echo_band_hi_c": 26.0,
+    "echo_is_cpp": true
+  },
+  "14104ab3a340167a1ee903126a8334bc64d2f26f5d250a7fa63fa2ff0e4850cd": {
+    "wtp": 0.0,
+    "reason": "The indoor temperature of 27.0\u00b0C is 1.0\u00b0C above the comfort band ceiling of 26.0\u00b0C. With a moderate thermal sensitivity (comfort band 22\u201326\u00b0C) and no explicit CPP-driven urgency indicated in the comfort fact, the household's willingness to pay for the comfort gain this interval is low, so I set it to the non-negative floor of $0.00.",
+    "echo_indoor_temp_c": 27.0,
+    "echo_band_lo_c": 22.0,
+    "echo_band_hi_c": 26.0,
+    "echo_is_cpp": false
+  },
+  "68efd4f48b186bd12e8d047ec37c3c497382295d02ba1e9982e38a1d59368ce6": {
+    "wtp": 0.0,
+    "reason": "Indoor temperature 30.0C is above the comfort band ceiling of 26.0C, so the household has a genuine comfort need. With moderate thermal sensitivity and a modest price of $0.220/kWh with no CPP event, the household would be willing to pay a moderate amount for cooling comfort, but not an extreme premium. A reasonable valuation is around $0.15 for the comfort benefit of running the AC during this interval.",
+    "echo_indoor_temp_c": 30.0,
+    "echo_band_lo_c": 22.0,
+    "echo_band_hi_c": 26.0,
+    "echo_is_cpp": false
+  },
+  "cf37e49da15dbe3e8c44a54a1a7164b9950c3ebbe1b1d76b01bb68337eb6ab0f": {
+    "wtp": 0.0,
+    "reason": "indoor temperature 30.0C is above the 22.0-26.0C comfort band, so comfort matters, but the CPP event is not active; at a moderate price sensitivity this household would not pay extra for the AC right now.",
+    "echo_indoor_temp_c": 30.0,
+    "echo_band_lo_c": 22.0,
+    "echo_band_hi_c": 26.0,
+    "echo_is_cpp": false
+  },
+  "db7e557d5d0a8ed71f48418564c5ad90d636e8836242eae417ddac4a9f4b401c": {
+    "wtp": 1.02,
+    "reason": "Indoor temperature is 30.0C, which is 4.0C above the 26.0C comfort ceiling. Running the AC avoids meaningful discomfort, so the household places a moderate positive value on cooling this period.",
+    "echo_indoor_temp_c": 30.0,
+    "echo_band_lo_c": 22.0,
+    "echo_band_hi_c": 26.0,
+    "echo_is_cpp": false
+  },
+  "ad1cbd11562a859f48d86adbffaf69ea173d573be5c8503ea66273f460a90505": {
+    "wtp": 0.0,
+    "reason": "Indoor temperature 24.0\u00b0C is within the comfort band of 22.0\u201326.0\u00b0C, so there is little discomfort to relieve. WTP for running the AC this interval is near zero.",
+    "echo_indoor_temp_c": 24.0,
+    "echo_band_lo_c": 22.0,
+    "echo_band_hi_c": 26.0,
+    "echo_is_cpp": false
+  },
+  "58265a7abe084fa363319a9df1367aaf4d4b4aa8e8ec93784169755711821a11": {
+    "wtp": 0.0,
+    "reason": "The indoor temperature is 4.0\u00b0C above the comfort band ceiling, which creates meaningful discomfort. However, the CPP event is currently active, which typically suppresses willingness-to-pay for discretionary comfort loads. Given the uncertainty in how strongly the CPP event curtails consumption and that the user's thermal sensitivity is unspecified here, I set a conservative estimate of $0.00 for the comfort benefit of running the AC during the CPP event.",
+    "echo_indoor_temp_c": 27.0,
+    "echo_band_lo_c": 23.0,
+    "echo_band_hi_c": 26.0,
+    "echo_is_cpp": true
+  },
+  "33f959101b1f6b2f33787e7c0f2c2a771e95edc0cc9052d8a56592a5567288df": {
+    "wtp": 0.0,
+    "reason": "The indoor temperature of 30.0\u00b0C is above the comfort band ceiling of 22.0\u201326.0\u00b0C, so the household would value running the AC to relieve discomfort. However, the CPP event is not stated as active in the current state block, and the persona reflects moderate thermal sensitivity and moderate cost sensitivity. The estimated willingness-to-pay for a single half-hour of AC comfort is modest.",
+    "echo_indoor_temp_c": 30.0,
+    "echo_band_lo_c": 22.0,
+    "echo_band_hi_c": 26.0,
+    "echo_is_cpp": false
+  }
+}
