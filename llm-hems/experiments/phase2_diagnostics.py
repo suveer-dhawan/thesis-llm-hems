@@ -10,17 +10,28 @@ re-runnable but one-off in purpose. Three checks:
    fixed washer slack state, and queries the LLM at four prices with
    everything else identical, to check whether `wtp` moves with price (it
    shouldn't -- BUILD_SPEC.md §6.3, the LLM must never do the cost
-   comparison itself). 8 calls total.
-3. Run-to-run variance check: since the Matilda API exposes no seed or
-   temperature (see `README.md` / `config/experiment.yaml`), re-runs the
-   full day 3x with caching disabled and reports spread in total cost,
-   flexible share, comfort-violation count, and two individual WTP values
-   at a state that is identical by construction across reps (t=0, before
-   any agent decision has had a chance to diverge). 3 reps x 96 calls =
-   288 calls -- the dominant cost of this script; done at the low end of
-   the requested 3-5 reps to keep spend down.
+   comparison itself). Post pre-Phase-3 fix, the prompt is price-blind (rate
+   and CPP status are never rendered into it at all -- `agents/prompts/
+   {hvac,shiftable}.txt`), so this is now closer to a tautology at the
+   prompt level; it's kept as a cheap end-to-end confirmation that `wtp`
+   genuinely doesn't move even though `DecisionContext.rate`/`cost_now`
+   still do (Python-side accounting only). 8 calls total.
+3. Run-to-run variance check: re-runs the full day 3x with caching disabled
+   and reports spread in total cost, flexible share, comfort-violation
+   count, and two individual WTP values at a state that is identical by
+   construction across reps (t=0, before any agent decision has had a
+   chance to diverge). Originally motivated by Matilda exposing no seed or
+   temperature; now that the default provider is `gemini` with `llm.
+   temperature: 0.0` / `llm.seed: 42` pinned (`config/experiment.yaml`), a
+   live (non `--dry-run`) run of this check is expected to show *zero*
+   spread -- it doubles as an end-to-end confirmation of that determinism
+   claim, not just a Matilda variance probe. 3 reps x 96 calls = 288 calls
+   -- the dominant cost of this script; done at the low end of the
+   requested 3-5 reps to keep spend down.
 
-Usage: `PYTHONPATH=src python experiments/phase2_diagnostics.py [--skip-variance]`
+Usage:
+  PYTHONPATH=src python experiments/phase2_diagnostics.py [--skip-variance]
+  PYTHONPATH=src python experiments/phase2_diagnostics.py --dry-run   # pipeline check, no spend
 """
 
 from __future__ import annotations
@@ -35,7 +46,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pandas as pd
-from run_single import load_environment, run_agent
+from run_single import build_llm_client, load_environment, load_llm_config, run_agent
 
 from hems.agents.base import DecisionContext
 from hems.agents.llm_agent import LLMAgent
@@ -130,8 +141,22 @@ def comfort_violation_profile(hvac_params) -> dict:
 PRICES = [0.22, 0.55, 1.20, 2.50]
 
 
-def price_invariance_test(hvac_params, washer_params, household) -> dict:
-    agent = LLMAgent(cache_path=RESULTS_DIR / "price_invariance_cache.json")
+def build_llm_agent(dry_run: bool, cache_path) -> LLMAgent:
+    """Same provider/config resolution as `run_single.build_agent`'s `llm`
+    branch -- reads `config/experiment.yaml`'s `llm:` block (provider,
+    model, temperature, seed, ...) instead of `LLMAgent`'s bare
+    provider="matilda" default, so a live call here is configured
+    identically to `run_single.py --agent llm`."""
+    if dry_run:
+        return LLMAgent(dry_run=True)
+    llm_cfg = load_llm_config()
+    provider = llm_cfg.get("provider", "matilda")
+    client = build_llm_client(provider, llm_cfg, cache_path)
+    return LLMAgent(client=client)
+
+
+def price_invariance_test(hvac_params, washer_params, household, dry_run: bool = False) -> dict:
+    agent = build_llm_agent(dry_run, RESULTS_DIR / "price_invariance_cache.json")
     household_ctx = {
         "thermal_sensitivity": household.params.thermal_sensitivity,
         "price_sensitivity": household.params.price_sensitivity,
@@ -171,17 +196,26 @@ def price_invariance_test(hvac_params, washer_params, household) -> dict:
 
     washer_rows = []
     # fixed slack: not started, 4-step cycle, 10 steps until deadline -> 6 steps slack
+    washer_steps_completed = 0
+    washer_deadline_step = 20
+    washer_t = 10
+    washer_steps_remaining = washer_params.duration_steps - washer_steps_completed
+    washer_steps_until_deadline = washer_deadline_step - washer_t
+    # Python-computed, not derived by the LLM (BUILD_SPEC.md §8, the washer
+    # slack fix) -- mirrors `environment/simulator.py`'s washer_ctx.
+    washer_slack_steps = washer_steps_until_deadline - washer_steps_remaining
     for rate in PRICES:
         ctx = DecisionContext(
-            t=10,
+            t=washer_t,
             clock="05:00",
             day_index=0,
             appliance={
                 "type": "washer",
-                "steps_completed": 0,
+                "steps_completed": washer_steps_completed,
                 "duration_steps": washer_params.duration_steps,
                 "released_step": washer_params.released_step,
-                "deadline_step": 20,
+                "deadline_step": washer_deadline_step,
+                "slack_steps": washer_slack_steps,
                 "interruptible": False,
                 "rated_kw": washer_params.power_kw,
             },
@@ -217,12 +251,14 @@ def price_invariance_test(hvac_params, washer_params, household) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def variance_check(household, tariff, hvac_params, washer_params, n_reps: int) -> dict:
+def variance_check(
+    household, tariff, hvac_params, washer_params, n_reps: int, dry_run: bool = False
+) -> dict:
     reps = []
     for i in range(n_reps):
         result, agent = run_agent(
             "llm", household, tariff, hvac_params, washer_params, DATE, seed=42,
-            dry_run=False, cache_path=None,
+            dry_run=dry_run, cache_path=None,
         )
         t0_hvac = next(e for e in agent.log if e.t == 0 and e.appliance == "hvac")
         t0_washer = next(e for e in agent.log if e.t == 0 and e.appliance == "washer")
@@ -265,6 +301,9 @@ def main() -> None:
     parser.add_argument(
         "--n-reps", type=int, default=3, help="number of full-day reps for the variance check"
     )
+    parser.add_argument(
+        "--dry-run", action="store_true", help="pipeline check, no API spend (checks 2 and 3 only)"
+    )
     args = parser.parse_args()
 
     household, tariff, hvac_params, washer_params = load_environment()
@@ -275,14 +314,16 @@ def main() -> None:
     print(json.dumps(profile, indent=2))
 
     print("\n=== 2. WTP price-invariance test ===")
-    invariance = price_invariance_test(hvac_params, washer_params, household)
+    invariance = price_invariance_test(hvac_params, washer_params, household, dry_run=args.dry_run)
     print(json.dumps(invariance, indent=2))
 
     output = {"comfort_violation_profile": profile, "price_invariance": invariance}
 
     if not args.skip_variance:
         print(f"\n=== 3. run-to-run variance check ({args.n_reps} full-day reps) ===")
-        variance = variance_check(household, tariff, hvac_params, washer_params, args.n_reps)
+        variance = variance_check(
+            household, tariff, hvac_params, washer_params, args.n_reps, dry_run=args.dry_run
+        )
         print(json.dumps(variance, indent=2))
         output["variance_check"] = variance
 

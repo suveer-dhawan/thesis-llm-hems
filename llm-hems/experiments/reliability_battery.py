@@ -4,8 +4,7 @@ NOT Phase 3 / elasticity work, and does not touch the MILP or noisy-MILP
 agents. Companion to `experiments/phase2_diagnostics.py`, which found the
 (then Matilda-only, pre-hardened-prompt) LLM agent misreading its own input
 state in 3 of 4 controlled calls: a wrong comfort band, a wrong indoor temp,
-an indoor/outdoor temperature mix-up, and an invented active CPP event when
-`is_cpp=no` was stated explicitly (see
+and an indoor/outdoor temperature mix-up (see
 results/phase2_diagnostics/diagnostics_summary.json).
 
 Before any elasticity work, this script:
@@ -15,16 +14,28 @@ Before any elasticity work, this script:
   2. Runs the identical battery against two providers (`matilda`, `gemini`)
      so a primary model can be chosen before Phase 3 starts.
 
+**Price-blind prompt (post pre-Phase-3 fix):** `agents/prompts/{hvac,
+shiftable}.txt` no longer state the rate or a CPP flag at all, and the
+state-echo schemas dropped `echo_is_cpp` accordingly (only the comfort-state
+echoes -- indoor temp/band for HVAC, deadline/slack for the washer --
+remain, see `llm/schemas.py`). `DecisionContext.rate`/`is_cpp` are still
+built below and still drive `cost_now` (Python-side accounting only, per
+BUILD_SPEC.md §1) -- they are simply never rendered into the prompt, and a
+misread on either is no longer a thing the model can report since it's
+never asked to echo them. Part A's price x CPP grid is kept (it still
+exercises the halt rule's own `cost_now` sensitivity and gives a cheap
+eyeball check that `wtp` itself doesn't drift with `rate`/`is_cpp` now that
+neither reaches the prompt), but the misread bookkeeping below only checks
+what the model can still get wrong: the comfort-state echoes.
+
 Two parts, run once per provider:
 
   A. State-reading battery (18 calls): synthetic HVAC contexts spanning
      indoor temp (in-band / mildly over / far over the ceiling) x CPP flag
-     (on/off) x price level (off-peak/peak/CPP-typical). The price and CPP
-     flag are varied *independently* on purpose -- a model that infers "CPP
-     active" from a high price alone, rather than reading the explicit
-     flag, shows up as a misread even though the flag combination wouldn't
-     occur in the simulator's own tariff. Reports a misread rate (fraction
-     of calls with >=1 echoed field wrong) and a per-field breakdown.
+     (on/off) x price level (off-peak/peak/CPP-typical) -- price/CPP only
+     affect `cost_now` and the halt rule now, never the prompt. Reports a
+     misread rate (fraction of calls with >=1 comfort-echo field wrong) and
+     a per-field breakdown.
 
   B. WTP price-invariance re-check (BUILD_SPEC.md §6.3: the LLM must never
      do the cost comparison itself): fixed HVAC + washer comfort state,
@@ -33,6 +44,13 @@ Two parts, run once per provider:
 
 18 + 8 = 26 calls per provider, 52 total -- cheap, per the task's "tens of
 calls per model" budget.
+
+Both providers go through the same config path as the production pipeline
+(`run_single.load_llm_config` / `build_llm_client`, reading
+`config/experiment.yaml`'s `llm:` block) rather than constructing an
+`LLMClient` with bare defaults, so a live (non `--dry-run`) `gemini` call
+here gets the pinned `temperature: 0.0` / `seed: 42` the same way
+`run_single.py --agent llm` does.
 
 Usage:
   PYTHONPATH=src python experiments/reliability_battery.py
@@ -47,7 +65,7 @@ import itertools
 import json
 from pathlib import Path
 
-from run_single import load_environment
+from run_single import build_llm_client, load_environment, load_llm_config
 
 from hems.agents.base import DecisionContext
 from hems.agents.llm_agent import LLMAgent
@@ -73,8 +91,8 @@ PRICE_LEVELS = [0.22, 0.55, 1.20]
 
 INVARIANCE_PRICES = [0.22, 0.55, 1.20, 2.50]
 
-ECHO_FIELDS_HVAC = ["indoor_temp_c", "band_lo_c", "band_hi_c", "is_cpp"]
-ECHO_FIELDS_WASHER = ["steps_until_deadline", "is_cpp"]
+ECHO_FIELDS_HVAC = ["indoor_temp_c", "band_lo_c", "band_hi_c"]
+ECHO_FIELDS_WASHER = ["steps_until_deadline", "slack_steps"]
 
 
 def household_ctx(household) -> dict:
@@ -82,6 +100,20 @@ def household_ctx(household) -> dict:
         "thermal_sensitivity": household.params.thermal_sensitivity,
         "price_sensitivity": household.params.price_sensitivity,
     }
+
+
+def build_llm_agent(dry_run: bool, cache_path, provider: str | None = None) -> LLMAgent:
+    """Same provider/config resolution as `run_single.build_agent`'s `llm`
+    branch -- reads `config/experiment.yaml`'s `llm:` block (provider,
+    model, temperature, seed, ...) rather than constructing `LLMClient`
+    with bare defaults, so a live call here is configured identically to
+    `run_single.py --agent llm`."""
+    if dry_run:
+        return LLMAgent(dry_run=True)
+    llm_cfg = load_llm_config()
+    resolved_provider = provider or llm_cfg.get("provider", "matilda")
+    client = build_llm_client(resolved_provider, llm_cfg, cache_path)
+    return LLMAgent(client=client)
 
 
 def build_hvac_context(hvac_params, hh_ctx, indoor_temp_c, rate, is_cpp, t=30, clock="15:00"):
@@ -105,16 +137,23 @@ def build_hvac_context(hvac_params, hh_ctx, indoor_temp_c, rate, is_cpp, t=30, c
 
 
 def build_washer_context(washer_params, hh_ctx, rate, is_cpp, t=10, clock="05:00", deadline_step=20):
+    steps_completed = 0
+    steps_remaining = washer_params.duration_steps - steps_completed
+    steps_until_deadline = deadline_step - t
+    # Python-computed, not derived by the LLM (BUILD_SPEC.md §8, the washer
+    # slack fix) -- mirrors `environment/simulator.py`'s washer_ctx.
+    slack_steps = steps_until_deadline - steps_remaining
     return DecisionContext(
         t=t,
         clock=clock,
         day_index=0,
         appliance={
             "type": "washer",
-            "steps_completed": 0,
+            "steps_completed": steps_completed,
             "duration_steps": washer_params.duration_steps,
             "released_step": washer_params.released_step,
             "deadline_step": deadline_step,
+            "slack_steps": slack_steps,
             "interruptible": False,
             "rated_kw": washer_params.power_kw,
         },
@@ -127,7 +166,7 @@ def build_washer_context(washer_params, hh_ctx, rate, is_cpp, t=10, clock="05:00
 
 def run_state_battery(provider: str, hvac_params, hh_ctx, dry_run: bool) -> tuple[list[dict], LLMAgent]:
     cache_path = None if dry_run else RESULTS_DIR / f"{provider}_state_battery_cache.json"
-    agent = LLMAgent(provider=provider, dry_run=dry_run, cache_path=cache_path)
+    agent = build_llm_agent(dry_run, cache_path, provider=provider)
 
     rows = []
     for (label, offset), is_cpp, rate in itertools.product(INDOOR_LEVELS, CPP_LEVELS, PRICE_LEVELS):
@@ -167,7 +206,7 @@ def summarize_state_battery(rows: list[dict]) -> dict:
 
 def run_price_invariance(provider: str, hvac_params, washer_params, hh_ctx, dry_run: bool) -> dict:
     cache_path = None if dry_run else RESULTS_DIR / f"{provider}_price_invariance_cache.json"
-    agent = LLMAgent(provider=provider, dry_run=dry_run, cache_path=cache_path)
+    agent = build_llm_agent(dry_run, cache_path, provider=provider)
 
     hvac_rows, washer_rows = [], []
     indoor = hvac_params.band_hi_c + 1.0  # 1C over the ceiling, fixed across prices
