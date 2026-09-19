@@ -25,7 +25,11 @@ normally set via `config/experiment.yaml`'s `llm.provider`):
   (pydantic `model_json_schema()`), matched against each appliance's
   response schema in `llm/schemas.py`. Free-tier calls are capped at 15
   req/min by default (`llm.gemini.rate_limit_rpm`) with a simple sliding-
-  window throttle before each call.
+  window throttle before each call. `temperature` and `seed` (BUILD_SPEC.md
+  §2.3, `config/experiment.yaml`'s `llm.temperature` / `llm.seed`, default
+  0.0 / 42) are passed into `GenerateContentConfig` on every call --
+  `probe_wtp_price_v3.py` found temperature=0 alone does NOT make two
+  identical prompts return an identical wtp; the seed is required too.
 
 Exposes one operation per client: `complete_json(prompt, schema) ->
 (parsed, was_cached)`, with a disk-backed cache keyed on `(provider,
@@ -77,6 +81,13 @@ DEFAULT_GEMINI_RATE_LIMIT_RPM = 5
 DEFAULT_GEMINI_MAX_OUTPUT_TOKENS = 2048  # generous: gemini-3.x "thinking" eats hidden budget
                                           # first before the JSON body -- 300 truncated the
                                           # response to an empty preamble in testing.
+# Reproducibility (BUILD_SPEC.md §2.3, config/experiment.yaml's `llm.temperature`
+# / `llm.seed`): probe_wtp_price_v3.py found temperature=0 ALONE is not enough
+# for two identical Gemini prompts to return an identical wtp -- the `seed`
+# parameter is also required for the determinism check to pass. Both are
+# threaded into GenerateContentConfig below.
+DEFAULT_GEMINI_TEMPERATURE = 0.0
+DEFAULT_GEMINI_SEED = 42
 
 
 class LLMError(RuntimeError):
@@ -154,6 +165,8 @@ class _GeminiBackend(_Backend):
         model: str,
         rate_limit_rpm: int,
         max_output_tokens: int,
+        temperature: float,
+        seed: int,
     ):
         resolved_key = api_key or os.environ.get("GEMINI_API_KEY")
         if not resolved_key:
@@ -165,6 +178,8 @@ class _GeminiBackend(_Backend):
         self._model = model
         self._rate_limit_rpm = rate_limit_rpm
         self._max_output_tokens = max_output_tokens
+        self._temperature = temperature
+        self._seed = seed
         self._call_times: list[float] = []
 
     def _throttle(self) -> None:
@@ -192,6 +207,8 @@ class _GeminiBackend(_Backend):
                 response_mime_type="application/json",
                 response_json_schema=schema.model_json_schema(),
                 max_output_tokens=self._max_output_tokens,
+                temperature=self._temperature,
+                seed=self._seed,
             ),
         )
         if not response.text:
@@ -235,6 +252,8 @@ class LLMClient:
         model: str = DEFAULT_GEMINI_MODEL,
         rate_limit_rpm: int = DEFAULT_GEMINI_RATE_LIMIT_RPM,
         max_output_tokens: int = DEFAULT_GEMINI_MAX_OUTPUT_TOKENS,
+        temperature: float = DEFAULT_GEMINI_TEMPERATURE,
+        seed: int = DEFAULT_GEMINI_SEED,
     ):
         if provider not in PROVIDERS:
             raise LLMError(f"unknown provider '{provider}' -- choose one of {PROVIDERS}")
@@ -243,7 +262,9 @@ class LLMClient:
         if provider == "matilda":
             self._backend = _MatildaBackend(api_key, base_url, timeout_s)
         else:
-            self._backend = _GeminiBackend(api_key, model, rate_limit_rpm, max_output_tokens)
+            self._backend = _GeminiBackend(
+                api_key, model, rate_limit_rpm, max_output_tokens, temperature, seed
+            )
         self._max_retries = max_retries
         self._cache_path = Path(cache_path) if cache_path else None
         self._cache: dict[str, dict] = {}

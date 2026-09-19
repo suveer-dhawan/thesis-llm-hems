@@ -56,6 +56,12 @@ def build_llm_client(provider: str, llm_cfg: dict, cache_path: str | None) -> LL
         for key in ("model", "rate_limit_rpm", "max_output_tokens"):
             if provider_cfg.get(key) is not None:
                 kwargs[key] = provider_cfg[key]
+        # Top-level (provider-agnostic) reproducibility knobs -- only Gemini's
+        # API exposes them (see llm/client.py); Matilda's does not.
+        if llm_cfg.get("temperature") is not None:
+            kwargs["temperature"] = llm_cfg["temperature"]
+        if llm_cfg.get("seed") is not None:
+            kwargs["seed"] = llm_cfg["seed"]
     elif provider == "matilda":
         if provider_cfg.get("base_url"):
             kwargs["base_url"] = provider_cfg["base_url"]

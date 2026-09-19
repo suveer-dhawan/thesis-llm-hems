@@ -177,6 +177,15 @@ def run_simulation(
         state.indoor_temp_c = new_indoor_temp
         hvac_cost = hvac_energy * rate_result.rate
 
+        # Slack = steps_until_deadline - steps_remaining, computed once here
+        # (design principle §1: the LLM never does arithmetic) so the
+        # shiftable prompt can state urgency explicitly instead of asking
+        # the model to derive it from two separate numbers -- see
+        # BUILD_SPEC.md §8 and `agents/llm_agent.py._build_washer_prompt`.
+        steps_remaining = washer_params.duration_steps - state.washer.steps_completed
+        steps_until_deadline = washer_params.deadline_step - t
+        slack_steps = steps_until_deadline - steps_remaining
+
         washer_ctx = DecisionContext(
             t=t,
             clock=clock,
@@ -187,6 +196,7 @@ def run_simulation(
                 "duration_steps": washer_params.duration_steps,
                 "released_step": washer_params.released_step,
                 "deadline_step": washer_params.deadline_step,
+                "slack_steps": slack_steps,
                 "interruptible": False,
                 "rated_kw": washer_params.power_kw,
             },

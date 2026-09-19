@@ -102,53 +102,72 @@ field to rely on.
 
 ## 3. Working sample
 
-**Method** (`ingest_sgsc.py`, fully deterministic — no RNG): for each of the
-20 `(cluster_all × ASSRTD_DWELLING_TYPE_CD)` strata (10 clusters × 2 dwelling
-types), household is excluded if it has >5% zero-valued intervals or annual
-consumption outside the population's 1st–99th percentile, then the household
-**closest to that stratum's median annual kWh** is picked — i.e. one
-"typical" house and one "typical" unit per cluster, chosen for
-representativeness rather than randomness.
+**Superseded (pre-Phase-3 fix):** the original working sample was 20
+households picked by `ingest_sgsc.py` (fully deterministic, no RNG): for
+each of the 20 `(cluster_all × ASSRTD_DWELLING_TYPE_CD)` strata (10 clusters
+× 2 dwelling types), household is excluded if it has >5% zero-valued
+intervals or annual consumption outside the population's 1st–99th
+percentile, then the household **closest to that stratum's median annual
+kWh** is picked. That stratified sample has been **replaced** by a
+24-household sample drawn from a separate interview-completeness audit (one
+`customer_ID` per stratum among households with a complete opt-in
+lifestyle-audit interview, giving richer per-household fields — income
+tier, climate zone, occupant count — than the demographic table's
+sparsely-populated interview columns alone would allow; see §2 "Sparse
+interview fields"). Demo customer `8596070` (cluster 3, `NotUnit`) is
+common to both samples.
 
-**Result:** 20 households, one `NotUnit` + one `Unit` per cluster (all 10
-clusters represented), written to:
+**Manifest of record:** [`llm-hems/config/household_sample.csv`](llm-hems/config/household_sample.csv)
+(24 rows: `customer_ID`, cluster, income tier, dwelling type, climate zone,
+aircon type, occupant count, has-children flag, annual kWh, peak hour).
+[`llm-hems/experiments/build_household_sample.py`](llm-hems/experiments/build_household_sample.py)
+freezes it against `data/raw/` into the two processed-parquet artifacts the
+rest of the project depends on:
 - [`llm-hems/data/processed/households.parquet`](llm-hems/data/processed/households.parquet)
-  (20 rows: id, cluster, dwelling type, annual kWh, peak kW, and a few
-  demographic flags — 8 KB)
+  (24 rows: id, cluster, dwelling type, annual kWh, peak kW, manifest fields,
+  and a few demographic flags)
 - [`llm-hems/data/processed/load_curves.parquet`](llm-hems/data/processed/load_curves.parquet)
-  (350,400 rows = 20 households × 17,520 steps, long format `customer_ID,
-  timestamp, kwh` — 1.2 MB)
+  (420,480 rows = 24 households × 17,520 steps, long format `customer_ID,
+  timestamp, kwh`)
 
 | customer_ID | cluster | dwelling | annual kWh | peak kW | trial group | solar | aircon | pool pump |
 |---|---|---|---|---|---|---|---|---|
-| 10447791 | 1 | NotUnit | 12,557 | 11.9 | Network | N | Y | N |
-| 8456863 | 1 | Unit | 8,948 | 9.2 | Control | Y | Y | Y |
-| 8473761 | 2 | NotUnit | 6,991 | 12.5 | Control | Y | Y | Y |
-| 10358736 | 2 | Unit | 6,097 | 12.9 | Control | Y | Y | Y |
+| 8568499 | 1 | NotUnit | 21,592 | 12.2 | Network | N | Y | N |
+| 10278838 | 1 | Unit | 5,468 | 7.2 | Network | N | N | N |
+| 8208263 | 2 | NotUnit | 7,879 | 9.4 | Network | N | N | N |
+| 10556929 | 2 | Unit | 7,833 | 6.8 | Network | N | N | N |
+| 8211127 | 3 | NotUnit | 11,837 | 17.4 | Network | N | Y | N |
 | 8596070 | 3 | NotUnit | 7,842 | 7.8 | Network | N | Y | N |
-| 10909344 | 3 | Unit | 5,432 | 8.7 | Control | Y | Y | Y |
-| 8196663 | 4 | NotUnit | 9,433 | 16.5 | Network | N | Y | N |
-| 10233626 | 4 | Unit | 5,842 | 9.9 | Control | Y | Y | Y |
-| 8602070 | 5 | NotUnit | 11,368 | 9.8 | Network | Y | Y | Y |
-| 11162259 | 5 | Unit | 5,317 | 5.6 | Control | Y | Y | Y |
-| 10288616 | 6 | NotUnit | 11,469 | 13.6 | Control | Y | Y | Y |
-| 11170263 | 6 | Unit | 6,376 | 9.7 | Network | Y | Y | Y |
-| 10733858 | 7 | NotUnit | 11,347 | 13.1 | Control | Y | Y | Y |
-| 10760974 | 7 | Unit | 7,581 | 8.2 | Network | Y | Y | Y |
-| 8147897 | 8 | NotUnit | 10,227 | 10.0 | Network | Y | Y | Y |
-| 8191457 | 8 | Unit | 5,512 | 3.8 | Network | Y | Y | Y |
-| 8358702 | 9 | NotUnit | 12,181 | 7.9 | Control | Y | Y | Y |
-| 10200184 | 9 | Unit | 6,078 | 8.4 | Control | Y | Y | Y |
-| 10649763 | 10 | NotUnit | 8,653 | 12.3 | Network | Y | Y | Y |
-| 11139953 | 10 | Unit | 5,364 | 12.4 | Network | Y | Y | Y |
+| 8456189 | 3 | Unit | 3,732 | 5.5 | Network | N | N | N |
+| 10649333 | 4 | NotUnit | 16,645 | 17.5 | Network | N | Y | N |
+| 10042536 | 4 | NotUnit | 12,568 | 12.6 | Network | N | Y | N |
+| 9911204 | 4 | Unit | 2,640 | 5.4 | Network | N | N | N |
+| 8201999 | 5 | NotUnit | 17,993 | 14.2 | Network | N | Y | Y |
+| 8463253 | 5 | NotUnit | 7,710 | 11.5 | Network | N | Y | N |
+| 9911140 | 5 | Unit | 2,324 | 4.8 | Network | N | Y | N |
+| 10444433 | 6 | NotUnit | 12,459 | 10.7 | Network | N | N | N |
+| 9911250 | 6 | Unit | 3,624 | 6.5 | Network | N | N | N |
+| 8638181 | 7 | NotUnit | 18,642 | 16.4 | Network | N | Y | N |
+| 8632083 | 7 | NotUnit | 11,322 | 11.2 | Network | N | Y | N |
+| 8481835 | 7 | Unit | 4,515 | 10.8 | Network | N | N | N |
+| 8395524 | 8 | NotUnit | 12,615 | 11.2 | Network | N | Y | N |
+| 11105177 | 8 | Unit | 7,307 | 9.8 | Network | N | N | N |
+| 9012382 | 9 | NotUnit | 18,165 | 13.3 | Network | N | Y | Y |
+| 10239118 | 9 | Unit | 5,885 | 9.2 | Network | N | N | N |
+| 8619039 | 10 | NotUnit | 9,456 | 10.0 | Network | N | Y | N |
+| 9911254 | 10 | Unit | 5,197 | 7.8 | Network | N | N | N |
 
-Houses consistently show higher annual consumption than units within the
-same cluster (larger dwellings, more appliances — pool pumps in particular
-are almost exclusively a `Unit`-sample coincidence of who was closest to the
-stratum median, not a general house/unit pattern).
+Every one of the 24 households is a `Network` trial participant with
+`HAS_SOLAR=N` (an artifact of which interview-complete households existed
+per stratum, not a deliberate filter); clusters 3, 4, 5, and 7 contribute
+three households each (HI/MED/LOW income tier) rather than one house + one
+unit, since the audit's selection axis is income tier crossed with dwelling
+type, not a strict one-house-one-unit-per-cluster rule. Houses (`NotUnit`)
+still consistently show higher annual consumption than units within the
+same cluster.
 
 The full raw dataset (`data/raw/`, ~946MB) stays gitignored per the project's
-`.gitignore`; only this ~1.3MB processed sample is committed. Note: the
+`.gitignore`; only the processed sample is committed. Note: the
 `.gitignore` in `llm-hems/` previously excluded *all* of `data/` and
 `results/`, which would have also hidden this sample and the plots below —
 it's been updated to `data/*` / `!data/processed/**` and `results/*` /
@@ -168,10 +187,17 @@ build spec are meant to represent. Units (dashed) generally show lower,
 flatter baseload than houses (solid) in the same cluster, consistent with
 smaller dwellings / fewer major appliances.
 
+*(This plot predates the §3 sample re-draw and shows six households from
+the original 20-household stratified sample, not the current 24; the
+qualitative shape observations still hold, but the specific `customer_ID`s
+plotted are no longer in `config/household_sample.csv`. Not regenerated
+here — droppable if a later phase wants a refreshed version against the
+24-household sample.)*
+
 ![Average weekday load shape by cluster](llm-hems/results/data_profile/avg_weekday_shape_by_cluster.png)
 
 Mean weekday (Mon–Fri) profile per cluster, averaged over **all** households
-in that cluster (not just the 20-household sample) across the full year.
+in that cluster (not just the 24-household sample) across the full year.
 The 10 clusters separate into two broad shapes:
 
 - **Evening-peak clusters (3, 4, 5, 7):** low overnight/daytime baseload,

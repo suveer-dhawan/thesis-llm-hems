@@ -30,6 +30,7 @@ llm-hems/
     appliances.yaml
     tariff.yaml
     household.yaml              # persona / comfort params
+    household_sample.csv        # 24-household population manifest (Phase 0/4)
     experiment.yaml             # ties it all together for one run
   data/
     raw/                        # SGSC clean CSVs (gitignored)
@@ -120,7 +121,8 @@ class DecisionAgent(Protocol):
   - HVAC: `indoor_temp`, `outdoor_temp`, `setpoint`, `tolerance_band`
   - shiftable: `steps_remaining_to_complete`, `deadline_step`, `released_step`, `interruptible: false`
 - `cost_now`: **exact $ to run this appliance this interval** (Python)
-- `rate`, `is_cpp`, and (optional) `rate_forecast` for the rest of the horizon
+- `rate`, `is_cpp`, and (optional) `rate_forecast` for the rest of the horizon — **Python-only**: used for `cost_now` and the halt rule, never rendered into the LLM prompt (see §6.3)
+- shiftable `slack_steps` (`steps_until_deadline - steps_remaining`, Python-computed): the deadline buffer, stated explicitly in the prompt so the LLM never has to derive it from two separate numbers
 - `household`: comfort/persona params (see §8)
 
 ## 6. The three agents
@@ -141,9 +143,11 @@ Per appliance per interval:
 3. Python computes utility `U = wtp - cost_now` and applies the **halt rule: run iff `U >= 0`** (satisfice — run while good-enough, stop when the price friction exceeds the comfort valuation).
 4. Log everything.
 
+**The prompt is price-blind.** The LLM is never told the electricity rate or whether a CPP event is active — it sees only comfort/urgency state (indoor temp + comfort band for HVAC; cycle progress + the Python-computed deadline `slack_steps` for the washer) and the household persona. `DecisionContext.rate` / `is_cpp` / `cost_now` still exist and are used by Python for step 3's cost/halt arithmetic; they are simply never rendered into `agents/prompts/{hvac,shiftable}.txt`. This was a post-hoc fix (`experiments/probe_wtp_price*.py`): with price in the prompt, the WTP itself already encoded a price reaction, contaminating the price-elasticity measurement the halt rule is supposed to produce on its own (§1, §10).
+
 Rationale for the split: LLMs are reliable at qualitative preference valuation, unreliable at arithmetic (macmillan2024ir); the halt is deterministic and reproducible because Python owns the comparison.
 
-**Model config:** primary model + one ablation model, both current (`CONFIRM` exact IDs — GPT-4o / Claude 3.5 Sonnet as written in Part 1 are dated). Temperature and seed policy in `experiment.yaml`. Run `n_seeds` (default 3) per scenario; report spread.
+**Model config:** primary model + one ablation model, both current (`CONFIRM` exact IDs — GPT-4o / Claude 3.5 Sonnet as written in Part 1 are dated). Default provider is `gemini` (`config/experiment.yaml`'s `llm.provider`) — Matilda's API exposes no `temperature`/`seed` parameter, so it can't meet the determinism requirement below. **Temperature = 0.0, seed = 42** (`llm.temperature` / `llm.seed`, both passed into Gemini's `GenerateContentConfig`): `probe_wtp_price_v3.py` found temperature=0 alone does **not** make two identical prompts return an identical `wtp` — the seed is required as well. Run `n_seeds` (default 3) per scenario; report spread.
 
 ## 7. Appliance models (`CONFIRM` all params)
 
@@ -200,7 +204,7 @@ where `Q` is energy consumed in the affected window, comparing a **baseline day*
 Design one scenario where structured reasoning and random jitter diverge — e.g. a **single unexpected CPP spike** with a **near deadline** on the shiftable load. A noisy-MILP responds only through its random draws; a satisficing agent should coherently trade the deadline urgency against the spike (defer if slack remains, run through the spike if the deadline forces it). Report whether the LLM's behaviour tracks the scenario logic where the noisy-MILP does not. This is the qualitative evidence that the LLM adds something.
 
 ## 13. Experiment protocol
-1. **Phase 0:** ingest SGSC → select representative households → freeze config.
+1. **Phase 0:** ingest SGSC → select representative households → freeze config. Re-drawn to the **24 interview-complete households** from the sample audit (manifest: `config/household_sample.csv`, frozen into `data/processed/{households,load_curves}.parquet` by `experiments/build_household_sample.py`), replacing the original 20-household stratified sample; demo customer `8596070` is preserved across the re-draw.
 2. **Phase 1:** run MILP + noisy-MILP on one household; sanity-check load curves and cost.
 3. **Phase 2:** run LLM agent (primary + ablation model) on one household, both appliances.
 4. **Phase 3 (single-household):** calibrate WTP on subset; report elasticity on held-out; four-way overlay; multi-seed spread; discriminating scenario.
@@ -229,4 +233,4 @@ LLM calls = appliances × steps × seeds × households × models. For one day: 2
 - Exact current model IDs (primary + ablation).
 - TOU *windows* now follow Ausgrid's current residential network periods (§9); the $/kWh rates on top of them are still representative retail placeholders — CONFIRM against a current retail plan. CPP severities ($1.20 / $2.50) are still illustrative.
 - Appliance nameplate params (HVAC kW/COP, RC values, washer kW/duration).
-- Final population size N.
+- Final population size N — the household sample is now frozen at 24 (§13 Phase 0); Phase 4 may run a subset or all 24.

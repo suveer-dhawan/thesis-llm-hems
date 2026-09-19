@@ -2,18 +2,22 @@
 
 Responsibility (BUILD_SPEC.md §6.3): per appliance per interval, prompt the
 LLM for a structured `wtp` (willingness-to-pay) + one-line `reason` given
-comfort state, time, price/CPP context, and household persona -- no cost
-comparison is asked of the LLM. Python then computes `U = wtp - cost_now`
-and applies the deterministic halt rule: run iff `U >= 0`. Every prompt,
-wtp, reasoning string, computed cost, utility, run/defer decision, and
-provider/model identity is logged (`self.log`, dumped via
+comfort state, time, and household persona -- no cost comparison is asked
+of the LLM. The prompt is deliberately **price-blind**: it never states the
+electricity rate or a CPP flag (see `agents/prompts/*.txt`), so the WTP
+reflects comfort/urgency valuation alone. Python still owns `ctx.rate` /
+`ctx.is_cpp` / `ctx.cost_now` for accounting -- it computes `U = wtp -
+cost_now` and applies the deterministic halt rule: run iff `U >= 0`. Every
+prompt, wtp, reasoning string, computed cost, utility, run/defer decision,
+and provider/model identity is logged (`self.log`, dumped via
 `log_to_dataframe()`).
 
-Each response also carries a state-echo (`llm/schemas.py`) that the model
-restates alongside its answer; `_detect_misreads` compares it against the
-real `DecisionContext` input so a misread (wrong indoor temp, wrong comfort
-band, an invented CPP event, ...) is caught programmatically rather than by
-manually reading `reason` strings -- see `experiments/reliability_battery.py`.
+Each response also carries a comfort-state echo (`llm/schemas.py`) that the
+model restates alongside its answer; `_detect_misreads` compares it against
+the real `DecisionContext` input so a misread (wrong indoor temp, wrong
+comfort band, wrong deadline slack, ...) is caught programmatically rather
+than by manually reading `reason` strings -- see
+`experiments/reliability_battery.py`.
 """
 
 from __future__ import annotations
@@ -165,14 +169,12 @@ class LLMAgent:
                 mismatches.append("band_lo_c")
             if abs(resp.echo_band_hi_c - band_hi) > _ECHO_TOLERANCE_C:
                 mismatches.append("band_hi_c")
-            if resp.echo_is_cpp != ctx.is_cpp:
-                mismatches.append("is_cpp")
         else:
             steps_until_deadline = a["deadline_step"] - ctx.t
             if resp.echo_steps_until_deadline != steps_until_deadline:
                 mismatches.append("steps_until_deadline")
-            if resp.echo_is_cpp != ctx.is_cpp:
-                mismatches.append("is_cpp")
+            if resp.echo_slack_steps != a["slack_steps"]:
+                mismatches.append("slack_steps")
         return mismatches
 
     # -- prompt building ----------------------------------------------------
@@ -199,11 +201,6 @@ class LLMAgent:
                 f"indoor is {indoor:.1f}C; comfort band is {band_lo:.1f}-{band_hi:.1f}C; "
                 f"you are WITHIN the band (no violation)"
             )
-        cpp_status = (
-            "ACTIVE -- price already reflects a critical-peak event"
-            if ctx.is_cpp
-            else "NOT ACTIVE -- normal pricing"
-        )
         return _HVAC_TEMPLATE.substitute(
             thermal_sensitivity=ctx.household.get("thermal_sensitivity", "moderate"),
             price_sensitivity=ctx.household.get("price_sensitivity", "moderate"),
@@ -212,19 +209,12 @@ class LLMAgent:
             band_lo_c=f"{band_lo:.1f}",
             band_hi_c=f"{band_hi:.1f}",
             comfort_fact=comfort_fact,
-            rate_dollars_per_kwh=f"{ctx.rate:.3f}",
-            cpp_status=cpp_status,
         )
 
     def _build_washer_prompt(self, ctx: DecisionContext) -> str:
         a = ctx.appliance
         steps_remaining = a["duration_steps"] - a["steps_completed"]
         steps_until_deadline = a["deadline_step"] - ctx.t
-        cpp_status = (
-            "ACTIVE -- price already reflects a critical-peak event"
-            if ctx.is_cpp
-            else "NOT ACTIVE -- normal pricing"
-        )
         return _SHIFTABLE_TEMPLATE.substitute(
             price_sensitivity=ctx.household.get("price_sensitivity", "moderate"),
             clock=ctx.clock,
@@ -234,8 +224,7 @@ class LLMAgent:
             already_started="yes" if a["steps_completed"] > 0 else "no",
             minutes_until_deadline=max(steps_until_deadline, 0) * 30,
             steps_until_deadline=steps_until_deadline,
-            rate_dollars_per_kwh=f"{ctx.rate:.3f}",
-            cpp_status=cpp_status,
+            slack_steps=a["slack_steps"],
         )
 
     # -- dry run --------------------------------------------------------
@@ -257,15 +246,13 @@ class LLMAgent:
                 echo_indoor_temp_c=a["indoor_temp_c"],
                 echo_band_lo_c=a["setpoint_c"] - a["tolerance_band_c"],
                 echo_band_hi_c=a["setpoint_c"] + a["tolerance_band_c"],
-                echo_is_cpp=ctx.is_cpp,
             )
-        steps_remaining = a["duration_steps"] - a["steps_completed"]
         steps_until_deadline = a["deadline_step"] - ctx.t
-        slack = steps_until_deadline - steps_remaining
+        slack = a["slack_steps"]
         wtp = 5.0 if slack <= 0 else max(0.0, 1.0 - 0.2 * slack)
         return schema(
             wtp=wtp,
             reason="dry-run stub: proportional to shrinking slack",
             echo_steps_until_deadline=steps_until_deadline,
-            echo_is_cpp=ctx.is_cpp,
+            echo_slack_steps=slack,
         )

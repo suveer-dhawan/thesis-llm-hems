@@ -10,36 +10,33 @@ CURRENT STATE AT $clock -- this is the ONLY state that matters; read every field
   cycle progress            : $steps_completed of $duration_steps half-hour steps completed ($steps_remaining remaining once started)
   already started            : $already_started
   time until deadline        : $minutes_until_deadline minutes ($steps_until_deadline half-hour steps)
-  electricity price now      : $$$rate_dollars_per_kwh per kWh
-  CPP EVENT RIGHT NOW        : $cpp_status
+  buffer before deadline     : $slack_steps half-hour steps of slack (0 = must start now to still finish by the deadline; already computed for you -- do not re-derive it from the two numbers above)
 
 Task: give this household's willingness-to-pay, in dollars, for running the
 washing machine during THIS interval only -- how much having the laundry
-progress (or finish) right now is worth to them, given how much time is left
-before the deadline. You may let whether a CPP event is active qualitatively
-inform how much this household would tolerate waiting, but you must not
-compute or state a cost.
+progress (or finish) right now is worth to them, given the buffer before
+deadline above. You must not compute or state a cost.
 
 Rules:
 - Base your answer ONLY on the CURRENT STATE block above. Do not invent,
   assume, or substitute any value not given there.
-- The CPP EVENT RIGHT NOW field is the single source of truth for whether a
-  CPP event is active. Never infer a CPP event from the price alone, and
-  never state one is active unless this field says so.
-- Do NOT compute, estimate, or mention the dollar cost of running the machine.
+- Do NOT compute, estimate, or mention the dollar cost of running the
+  machine, and do not reason about electricity price or pricing events --
+  you are not given that information and must not assume any particular
+  price.
 - Do NOT compare your wtp to the price or to any cost figure -- that
   comparison is made separately, outside this task. Do not perform
   arithmetic of any kind; give a qualitative judgement expressed as a dollar
   amount.
 - wtp must be a non-negative number.
-- If the deadline is far away and there is plenty of slack to finish the
-  full cycle later, wtp should be low (near zero) -- there is no urgency
-  yet, so the household would rather wait for a cheaper interval.
-- As the time remaining approaches the time still needed to finish the
-  cycle (i.e. slack shrinks toward zero), urgency rises sharply and wtp
-  should rise with it -- if there is barely enough time left to finish
-  before the deadline, wtp should be high regardless of price, because
-  missing the deadline is worse than paying more.
+- Use the "buffer before deadline" figure directly as the measure of
+  urgency -- it is already the slack (time remaining minus time still
+  needed), not the raw time-until-deadline or cycle-progress numbers.
+- If the buffer is large, wtp should be low (near zero) -- there is no
+  urgency yet, so the household would rather wait for a cheaper interval.
+- As the buffer shrinks toward zero, urgency rises sharply and wtp should
+  rise with it -- at a buffer of zero, wtp should be high regardless of
+  price, because missing the deadline is worse than paying more.
 - If the cycle has already started, remember it cannot be stopped partway
   through -- treat continuing as close to mandatory and give a high wtp.
 
@@ -47,4 +44,4 @@ Before answering, echo back the exact state you are acting on -- this is
 checked programmatically against the real input, so copy the numbers from
 the CURRENT STATE block above exactly:
 - echo_steps_until_deadline: the half-hour steps until deadline given above
-- echo_is_cpp: whether the CPP EVENT RIGHT NOW field above says active
+- echo_slack_steps: the buffer-before-deadline value given above

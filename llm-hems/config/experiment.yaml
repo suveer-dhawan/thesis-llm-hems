@@ -16,8 +16,20 @@ llm:
   # Provider selection (BUILD_SPEC.md §14: LLM SDKs live behind llm/client.py
   # so neither leaks into agent logic). `run_single.py --provider` overrides
   # this per-run; the reliability battery (experiments/reliability_battery.py)
-  # runs both providers regardless of this setting.
-  provider: matilda              # matilda | gemini
+  # runs both providers regardless of this setting. Flipped matilda -> gemini
+  # after the v1-v3 probes: Matilda's chat.create_object exposes no
+  # temperature/seed parameter (see the `matilda:` block below), so it can't
+  # meet the T=0+seed determinism requirement this project now depends on.
+  provider: gemini                # matilda | gemini
+
+  # Reproducibility (BUILD_SPEC.md §2.3, §6.3): T=0 alone was NOT sufficient
+  # for two identical prompts to return an identical wtp in
+  # probe_wtp_price_v3.py's determinism check -- the seed is required as
+  # well. Both are passed into Gemini's GenerateContentConfig on every call
+  # (llm/client.py); Matilda's API exposes neither (see below), so these
+  # only take effect for provider: gemini.
+  temperature: 0.0
+  seed: 42
 
   matilda:
     # Maincode's Matilda API (matilda-client SDK). Matilda owns model/provider

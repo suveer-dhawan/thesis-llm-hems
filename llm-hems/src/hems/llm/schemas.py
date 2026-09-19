@@ -6,16 +6,18 @@ contract that `llm_agent.py` gets back from `llm/client.py` and turns into a
 run/defer decision. `wtp` and `reason` are the *only* things the LLM's
 answer is used for downstream; Python owns every other number (§1).
 
-Both schemas also carry a state-echo: the model restates the exact input
-fields it says it is acting on (indoor temp + comfort band + CPP flag for
-HVAC; deadline slack + CPP flag for the washer). This exists purely so a
+Both schemas also carry a state-echo: the model restates the exact
+comfort-state input fields it says it is acting on (indoor temp + comfort
+band for HVAC; deadline + slack for the washer). This exists purely so a
 misread is detectable programmatically -- `agents/llm_agent.py` compares the
 echo against the real `DecisionContext` input and logs any mismatch. This
 was added after `experiments/phase2_diagnostics.py` found the (then
 Matilda-only, pre-hardened-prompt) agent misreading its own input state in
-3 of 4 controlled calls: a wrong comfort band, a wrong indoor temp, an
-indoor/outdoor temperature mix-up, and an invented active CPP event when
-`is_cpp=no` was stated explicitly.
+3 of 4 controlled calls: a wrong comfort band, a wrong indoor temp, and an
+indoor/outdoor temperature mix-up. The prompt is price-blind (the LLM is
+never given the rate or a CPP flag -- see `agents/prompts/*.txt`), so there
+is no price/CPP state to echo any more; only the comfort-state fields
+remain.
 """
 
 from __future__ import annotations
@@ -38,10 +40,6 @@ class HVACWTPResponse(BaseModel):
     echo_band_hi_c: float = Field(
         description="Restate the comfort band's upper bound (C) from the prompt, exactly as given."
     )
-    echo_is_cpp: bool = Field(
-        description="Restate whether a CPP event is active right now, exactly as stated in "
-        "the prompt -- do not infer this from the price."
-    )
 
 
 class WasherWTPResponse(BaseModel):
@@ -53,7 +51,7 @@ class WasherWTPResponse(BaseModel):
         description="Restate the number of half-hour steps remaining until the deadline "
         "from the prompt, exactly as given."
     )
-    echo_is_cpp: bool = Field(
-        description="Restate whether a CPP event is active right now, exactly as stated in "
-        "the prompt -- do not infer this from the price."
+    echo_slack_steps: int = Field(
+        description="Restate the 'buffer before deadline' (slack) value from the prompt, "
+        "exactly as given -- do not recompute it."
     )

@@ -1,0 +1,25 @@
+customer_ID,cluster,income_tier,dwelling,climate_zone,aircon,num_occupants,has_children,annual_kwh,peak_hour
+8568499,1,HI,NotUnit,Warm temperate,SplitSystem,5.0,Y,21592.4,19.0
+10278838,1,MED,Unit,Warm temperate,N,1.0,N,5468.2,18.0
+10556929,2,HI,Unit,Warm temperate,N,2.0,N,7833.0,9.0
+8208263,2,LOW,NotUnit,Warm temperate,N,2.0,N,7878.8,7.5
+8211127,3,HI,NotUnit,Warm temperate,Ducted,4.0,Y,11837.4,7.5
+8596070,3,LOW,NotUnit,Warm temperate,SplitSystem,2.0,N,7841.7,18.0
+8456189,3,MED,Unit,Warm temperate,N,1.0,N,3732.5,18.0
+10649333,4,HI,NotUnit,Mild temperate,SplitSystem,3.0,Y,16645.1,19.5
+10042536,4,LOW,NotUnit,Mild temperate,SplitSystem,6.0,N,12568.3,19.5
+9911204,4,MED,Unit,Warm temperate,N,1.0,N,2640.1,18.5
+8201999,5,HI,NotUnit,Warm temperate,SplitSystem,2.0,N,17992.5,18.5
+8463253,5,LOW,NotUnit,Warm temperate,SplitSystem,4.0,Y,7710.3,18.0
+9911140,5,MED,Unit,Warm temperate,SplitSystem,2.0,N,2324.3,19.0
+10444433,6,HI,NotUnit,Warm temperate,N,4.0,N,12458.6,19.0
+9911250,6,MED,Unit,Warm temperate,N,2.0,N,3623.7,21.5
+8638181,7,HI,NotUnit,Mild temperate,SplitSystem,5.0,Y,18641.8,8.0
+8632083,7,LOW,NotUnit,Mild temperate,SplitSystem,2.0,N,11322.3,18.5
+8481835,7,MED,Unit,Mild temperate,N,1.0,N,4515.2,18.5
+11105177,8,HI,Unit,Warm temperate,N,2.0,N,7306.6,21.0
+8395524,8,MED,NotUnit,Warm temperate,SplitSystem,1.0,N,12615.3,19.0
+9012382,9,HI,NotUnit,Warm temperate,SplitSystem,2.0,N,18164.9,22.5
+10239118,9,LOW,Unit,Warm temperate,N,2.0,N,5884.5,23.5
+8619039,10,LOW,NotUnit,Mild temperate,SplitSystem,2.0,N,9455.7,17.5
+9911254,10,MED,Unit,Warm temperate,N,3.0,N,5196.8,21.0
