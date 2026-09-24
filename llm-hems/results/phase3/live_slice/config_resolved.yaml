@@ -1,0 +1,74 @@
+phase3:
+  persona_assignment: config/persona_assignment.csv
+  dates:
+  - '2013-01-18'
+  cpp:
+    start: '17:00'
+    end: '20:00'
+    severity: moderate
+  rebound_hours: 2
+  elasticity_method: base
+  seeds:
+  - 42
+  - 43
+  - 44
+  llm_cache_path: results/phase3/llm_cache.jsonl
+  calibration:
+    fraction: 0.5
+    split_seed: 42
+    fit_seed: 42
+    target_elasticity: -0.25
+    conway_range:
+    - -0.47
+    - -0.026
+    scale_grid:
+    - 0.25
+    - 0.5
+    - 1.0
+    - 2.0
+    - 4.0
+  scenario:
+    spike:
+      start: '18:00'
+      end: '19:00'
+      severity: severe
+    variants:
+      slack_remains:
+        washer_release: '17:30'
+        washer_deadline: '21:30'
+      deadline_forces:
+        washer_release: '17:30'
+        washer_deadline: '20:00'
+  live_slice:
+    households:
+    - 8596070
+    - 9911140
+    seed: 42
+    max_live_households: 3
+llm:
+  provider: gemini
+  temperature: 0.0
+  seed: 42
+  matilda:
+    base_url: https://matilda.maincode.com/api
+    sdk_version: matilda-client==0.3.0
+    confirmed_date: '2026-09-06'
+    model: null
+    temperature: null
+    seed: null
+  gemini:
+    model: gemini-3.5-flash-lite
+    sdk_version: null
+    rate_limit_rpm: 5
+    max_output_tokens: 2048
+  dry_run: false
+  cache_path: results/llm_cache.json
+dry_run: false
+households:
+- 8596070
+- 9911140
+steps:
+- elasticity
+- overlay
+seed: 42
+scale_arg: 1.0

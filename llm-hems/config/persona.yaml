@@ -1,0 +1,110 @@
+# Generic persona schema -- SGSC instantiation (decision memo Phase 2.7).
+#
+# The schema has three generic axes; this file says how each one is filled
+# from the SGSC data we actually have. Every number here is adjustable: edit
+# it, re-run `python experiments/build_personas.py`, and the committed
+# assignment (`config/persona_assignment.csv`) plus the report are rebuilt.
+# Nothing downstream hard-codes any of these values.
+#
+#   cost_sensitivity  -> energy burden  -> archetype A/B/C -> prompt `price_sensitivity`
+#   thermal_tolerance -> comfort band   -> HVAC tolerance  -> prompt `thermal_sensitivity`
+#   schedule_profile  -> load-shape cluster -> washer release/deadline window
+
+# ---------------------------------------------------------------------------
+# cost_sensitivity: energy burden = est_annual_cost / income_midpoint
+# ---------------------------------------------------------------------------
+cost_sensitivity:
+  # est_annual_cost = real 2013 annual kWh (data/processed/households.parquet)
+  # x an average tariff rate derived from config/tariff.yaml.
+  #   time_weighted: plain mean of rate_at() over every 30-min step of
+  #                  `rate_year` (CPP events excluded -- they are experimental
+  #                  shocks, not part of the standing bill).
+  #   load_weighted: each household's own kWh-weighted mean rate over the
+  #                  same year (its actual TOU bill / its kWh).
+  # With time_weighted the rate is one constant, so it cannot change the
+  # tercile *ranking* -- it only matters for the fixed-threshold option.
+  average_rate_method: time_weighted
+  rate_year: 2013
+
+  # Income tier -> representative annual household income.
+  # Source: SGSC data dictionary (data/raw/index files/Column Mappings.csv),
+  # HHOLD_INCOME_GROUP_CD: "< $800 (Low) | $800 - $1200 (Med) | > $1200 (High)
+  # per week". Our tier is ASSRTD_HHOLD_INCOME_GROUP_CD (Ausgrid's *assumed*
+  # income for the service location, same HI/MED/LOW coding; the dictionary
+  # gives no separate bands for it, so the interview bands are applied).
+  # MED is the band midpoint. LOW and HI are open-ended; each is closed by
+  # extending the adjacent band's $400/wk width (LOW = $400-800, HI =
+  # $1200-1600) and taking the midpoint. This is a conservative choice for HI
+  # (1.5x the lower bound would give $1800/wk) -- CONFIRM / sensitivity-test.
+  income_weekly_midpoint_aud:
+    LOW: 600
+    MED: 1000
+    HI: 1400
+  weeks_per_year: 52
+
+  # How burden is bucketed into L/M/H -> archetype A (low burden) / B / C (high).
+  #   terciles: rank-based cut across the households in the manifest (8/8/8
+  #             for 24) -- balanced by construction, which is what the
+  #             stratified calibration/held-out split needs.
+  #   fixed:    absolute thresholds below (fraction of income).
+  bucketing: terciles
+  # Reported alongside terciles for comparison. 6% is the conventional
+  # "high energy burden" line in the energy-poverty literature (CONFIRM the
+  # exact AU citation); 3% is a half-way marker, not a sourced figure.
+  fixed_thresholds: [0.03, 0.06]
+  archetype_labels: [A, B, C]            # low, medium, high burden
+
+  # Archetype -> the qualitative `price_sensitivity` descriptor rendered into
+  # the (price-blind) prompt persona line. A descriptor only -- never a number.
+  price_sensitivity_by_archetype:
+    A: low
+    B: moderate
+    C: high
+
+  # Old anchor, kept as a comparison column (and fallback if burden is rejected).
+  income_tier_archetype:
+    HI: A
+    MED: B
+    LOW: C
+
+# ---------------------------------------------------------------------------
+# thermal_tolerance -> HVAC comfort band (+/- degC around the setpoint)
+# ---------------------------------------------------------------------------
+thermal_tolerance:
+  # Rules are checked in order; first match wins.
+  rules:
+    - when: {has_children: "Y"}
+      tolerance_band_c: 1.5
+    - when: {aircon: Ducted}
+      tolerance_band_c: 1.5
+    - when: {aircon: SplitSystem}
+      tolerance_band_c: 2.0
+  default_tolerance_band_c: 2.5          # no aircon
+  # Band -> the qualitative `thermal_sensitivity` descriptor in the prompt.
+  thermal_sensitivity_by_band:
+    "1.5": tight
+    "2.0": moderate
+    "2.5": loose
+
+# ---------------------------------------------------------------------------
+# schedule_profile -> washer release / deadline window (from load-shape cluster)
+# ---------------------------------------------------------------------------
+schedule_profile:
+  default_profile: evening
+  profile_by_cluster:
+    2: morning      # cluster 2: early-morning peak (07:30-09:00 in the sample)
+    9: night        # cluster 9: late/overnight peak (22:30-23:30 in the sample)
+  profiles:
+    evening:
+      washer_release: "16:00"
+      washer_deadline: "22:00"
+    morning:
+      washer_release: "06:00"
+      washer_deadline: "10:00"
+    night:
+      # The simulator horizon is one calendar day (48 steps), so a true
+      # overnight window (e.g. 21:00 -> 07:00) cannot wrap past midnight.
+      # 20:00 -> 23:30 is the latest same-day window. CONFIRM if multi-day
+      # horizons are added.
+      washer_release: "20:00"
+      washer_deadline: "23:30"

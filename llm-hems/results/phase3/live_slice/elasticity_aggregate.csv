@@ -1,0 +1,4 @@
+agent,n,elasticity_hvac,elasticity_washer,elasticity_flexible,elasticity_total,in_conway_total
+milp,2,-0.8461538461538463,,-0.8461538461538463,-0.2580524080981538,True
+noisy_milp,2,-0.8461538461538463,0.0,-0.7692307692307693,-0.18726432359275114,True
+llm,2,0.0,0.0,0.0,0.0,False

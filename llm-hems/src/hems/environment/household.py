@@ -16,6 +16,7 @@ not subtracted out of this curve.
 from __future__ import annotations
 
 import datetime as dt
+import functools
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -36,6 +37,13 @@ class HouseholdParams:
     deadline: str  # "HH:MM"
     occupied_hours_start: str
     occupied_hours_end: str
+    # Persona-schema fields (config/persona.yaml -> config/persona_assignment.csv,
+    # see environment/persona.py). None = fall back to appliances.yaml /
+    # household.yaml defaults, which is what the single-household
+    # config/household.yaml path does.
+    archetype: str | None = None
+    tolerance_band_c: float | None = None
+    washer_release: str | None = None  # "HH:MM"
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> "HouseholdParams":
@@ -49,6 +57,13 @@ class HouseholdParams:
             occupied_hours_start=cfg["occupied_hours"]["start"],
             occupied_hours_end=cfg["occupied_hours"]["end"],
         )
+
+
+@functools.lru_cache(maxsize=2)
+def _read_load_curves(path: str) -> pd.DataFrame:
+    """The processed long-format curves, read once per process (Phase 3 builds
+    hundreds of `Household`s from the same 420k-row file)."""
+    return pd.read_parquet(path)
 
 
 @dataclass
@@ -68,7 +83,7 @@ class Household:
         load_curves_path: str | Path = DEFAULT_LOAD_CURVES_PATH,
     ):
         self.params = params
-        curves = pd.read_parquet(load_curves_path)
+        curves = _read_load_curves(str(load_curves_path))
         mine = curves[curves["customer_ID"] == params.household_id].sort_values("timestamp")
         if mine.empty:
             raise ValueError(f"no load-curve rows for household_id={params.household_id}")

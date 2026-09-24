@@ -1,0 +1,12 @@
+{
+  "prompted_decisions": 218,
+  "live_calls_this_process": 109,
+  "client_stats_by_seed": {
+    "42": {
+      "live_calls": 109,
+      "cache_hits": 109
+    }
+  },
+  "dry_run": false,
+  "wall_seconds": 1272.2
+}

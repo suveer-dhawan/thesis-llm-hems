@@ -11,6 +11,7 @@ Units: `rate` is $/kWh. `cost = energy_kwh * rate` -- see BUILD_SPEC.md
 
 from __future__ import annotations
 
+import copy
 import datetime as dt
 from dataclasses import dataclass
 from pathlib import Path
@@ -115,6 +116,33 @@ class Tariff:
         with open(path) as f:
             config = yaml.safe_load(f)
         return cls(config)
+
+    def make_cpp_event(
+        self,
+        date: dt.date,
+        start: str,
+        end: str,
+        severity: str | None = None,
+        rate: float | None = None,
+    ) -> CppEvent:
+        """A CPP event priced by an explicit `rate` or a configured `severity`."""
+        if rate is None:
+            if severity is None:
+                raise ValueError("a CPP event needs either a severity or an explicit rate")
+            rate = self.cpp_severity_rates[severity]
+        return CppEvent(date=date, start=start, end=end, rate=float(rate))
+
+    def with_cpp_events(self, events: list[CppEvent]) -> "Tariff":
+        """Same TOU schedule, CPP schedule replaced by `events` (`[]` = no CPP at all).
+
+        Phase 3 uses this to build a matched pair on one calendar date --
+        a baseline tariff with no CPP and a CPP tariff with exactly one
+        event -- so the only thing that differs between the two runs is the
+        price in the event window (BUILD_SPEC.md §10).
+        """
+        clone = copy.copy(self)
+        clone.cpp_events = list(events)
+        return clone
 
     def rate_at(self, t: int, date: dt.date) -> RateResult:
         """Rate for 30-min step `t` on calendar `date`.

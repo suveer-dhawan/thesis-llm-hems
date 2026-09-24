@@ -164,3 +164,25 @@ def test_detect_misreads_washer():
         wtp=1.0, reason="correct", echo_steps_until_deadline=10, echo_slack_steps=6
     )
     assert agent._detect_misreads("washer", ctx, good_response) == []
+
+
+def test_wtp_scale_multiplies_wtp_in_halt_rule():
+    ctx = _hvac_ctx(indoor_temp_c=26.2, rate=0.55)  # stub wtp = 0.8 * 0.7 = 0.56 vs cost 0.55
+    assert LLMAgent(dry_run=True, wtp_scale=1.0).decide(ctx).run
+    assert not LLMAgent(dry_run=True, wtp_scale=0.5).decide(ctx).run
+
+
+def test_washer_forced_states_skip_the_prompt():
+    agent = LLMAgent(dry_run=True)
+    # mid-cycle: must continue, no prompt
+    assert agent.decide(_washer_ctx(t=12, steps_completed=2)).run
+    # completed: nothing to do
+    assert not agent.decide(_washer_ctx(t=15, steps_completed=4)).run
+    # before release
+    ctx = _washer_ctx(t=3)
+    ctx.appliance["released_step"] = 5
+    assert not agent.decide(ctx).run
+    assert all(e.forced and e.prompt == "" for e in agent.log)
+    assert agent.prompted_decisions == 0
+    agent.decide(_washer_ctx(t=10))  # released, not started -> a real decision
+    assert agent.prompted_decisions == 1

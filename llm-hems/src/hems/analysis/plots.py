@@ -78,3 +78,43 @@ def plot_overlay(
     fig.tight_layout()
     fig.savefig(out_path, dpi=150)
     plt.close(fig)
+
+
+def plot_four_way(
+    base_day: dict[str, list[float]],
+    cpp_day: dict[str, list[float]],
+    clocks: list[str],
+    cpp_window: tuple[int, int],
+    out_path: str | Path,
+    title: str,
+) -> None:
+    """Four-way daily load-curve overlay (BUILD_SPEC.md §11), baseline vs CPP day.
+
+    Each dict maps a series label -- "SGSC base", "MILP", "noisy-MILP", "LLM"
+    -- to a kWh-per-half-hour curve (one household, or a population sum). The
+    CPP window `[start, end)` (step indices) is shaded on the CPP panel.
+    """
+    styles = {
+        "SGSC base": {"color": "0.45", "linestyle": "--", "linewidth": 1.4},
+        "MILP": {"color": _PALETTE[0], "linewidth": 1.6},
+        "noisy-MILP": {"color": _PALETTE[1], "linewidth": 1.6},
+        "LLM": {"color": _PALETTE[2], "linewidth": 2.2},
+    }
+    fig, axes = plt.subplots(1, 2, figsize=(15, 4.8), sharey=True)
+    for ax, (panel, curves) in zip(axes, [("baseline day (no CPP)", base_day), ("CPP day", cpp_day)]):
+        for label, curve in curves.items():
+            ax.plot(clocks, _kw(curve), label=label, **styles.get(label, {}))
+        if panel == "CPP day":
+            ax.axvspan(cpp_window[0] - 0.5, cpp_window[1] - 0.5, color="#C44E52", alpha=0.12,
+                       label="CPP window")
+        ax.set_title(panel)
+        ax.set_xticks(range(0, len(clocks), 4))
+        ax.set_xticklabels(clocks[::4], rotation=45, ha="right")
+        ax.set_xlabel("time of day")
+        ax.grid(alpha=0.25)
+    axes[0].set_ylabel("kW")
+    axes[1].legend(loc="upper left")
+    fig.suptitle(title)
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=150)
+    plt.close(fig)

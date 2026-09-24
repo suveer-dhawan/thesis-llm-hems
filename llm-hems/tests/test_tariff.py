@@ -119,3 +119,22 @@ def test_demo_day_is_within_summer_peak_season(tariff: Tariff):
     result = tariff.rate_at(clock_to_step("15:30"), CPP_DAY)
     assert result.rate == pytest.approx(0.55)
     assert result.is_cpp is False
+
+
+def test_cpp_variants_share_tou_and_differ_only_in_event():
+    import datetime as dt
+
+    from hems.environment.tariff import Tariff
+
+    t = Tariff.from_yaml("config/tariff.yaml")
+    day = dt.date(2013, 1, 18)
+    base = t.with_cpp_events([])
+    cpp = t.with_cpp_events([t.make_cpp_event(day, "17:00", "20:00", severity="severe")])
+    for step in range(48):
+        b, c = base.rate_at(step, day), cpp.rate_at(step, day)
+        assert not b.is_cpp
+        if 34 <= step < 40:
+            assert c.is_cpp and c.rate == 2.50
+        else:
+            assert c == b
+    assert t.cpp_events and t.rate_at(34, day).is_cpp  # original untouched

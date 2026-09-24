@@ -6,8 +6,15 @@ comfort state, time, and household persona -- no cost comparison is asked
 of the LLM. The prompt is deliberately **price-blind**: it never states the
 electricity rate or a CPP flag (see `agents/prompts/*.txt`), so the WTP
 reflects comfort/urgency valuation alone. Python still owns `ctx.rate` /
-`ctx.is_cpp` / `ctx.cost_now` for accounting -- it computes `U = wtp -
-cost_now` and applies the deterministic halt rule: run iff `U >= 0`. Every
+`ctx.is_cpp` / `ctx.cost_now` for accounting -- it computes `U = wtp_scale *
+wtp - cost_now` and applies the deterministic halt rule: run iff `U >= 0`.
+`wtp_scale` is the single global factor Phase 3 fits on the calibration
+subset (`experiments/calibrate.py`) and then freezes; it defaults to 1.0.
+
+Washer steps where Python already fixes the outcome -- before the release
+step, mid-cycle (non-interruptible), or after completion -- are decided
+without a prompt (`forced=True` in the log): the simulator would override
+whatever the model said, so asking costs a call and changes nothing. Every
 prompt, wtp, reasoning string, computed cost, utility, run/defer decision,
 and provider/model identity is logged (`self.log`, dumped via
 `log_to_dataframe()`).
@@ -52,12 +59,14 @@ class LLMDecisionLogEntry:
     clock: str
     appliance: str
     prompt: str
-    wtp: float
+    wtp: float  # raw model output, before wtp_scale
     reason: str
     cost_now: float
     utility: float
     run: bool
     cached: bool
+    forced: bool
+    wtp_scale: float
     dry_run: bool
     provider: str
     model_id: str
@@ -81,9 +90,11 @@ class LLMAgent:
         provider: str = "matilda",
         dry_run: bool = False,
         cache_path: str | Path | None = None,
+        wtp_scale: float = 1.0,
     ):
         self._dry_run = dry_run
         self._client = None if dry_run else (client or LLMClient(provider=provider, cache_path=cache_path))
+        self.wtp_scale = float(wtp_scale)
         self.log: list[LLMDecisionLogEntry] = []
 
     @property
@@ -100,6 +111,10 @@ class LLMAgent:
 
     def decide(self, ctx: DecisionContext) -> Decision:
         appliance_type = ctx.appliance["type"]
+        if appliance_type == "washer":
+            forced = self._forced_washer_decision(ctx)
+            if forced is not None:
+                return forced
         if appliance_type == "hvac":
             prompt = self._build_hvac_prompt(ctx)
             schema = HVACWTPResponse
@@ -114,7 +129,7 @@ class LLMAgent:
         else:
             wtp_response, cached = self._client.complete_json(prompt, schema)
 
-        utility = wtp_response.wtp - ctx.cost_now
+        utility = self.wtp_scale * wtp_response.wtp - ctx.cost_now
         run = utility >= 0
         misreads = self._detect_misreads(appliance_type, ctx, wtp_response)
 
@@ -130,6 +145,8 @@ class LLMAgent:
                 utility=utility,
                 run=run,
                 cached=cached,
+                forced=False,
+                wtp_scale=self.wtp_scale,
                 dry_run=self._dry_run,
                 provider=self.provider,
                 model_id=self.model_id,
@@ -141,6 +158,44 @@ class LLMAgent:
 
     def name(self) -> str:
         return "llm"
+
+    def _forced_washer_decision(self, ctx: DecisionContext) -> Decision | None:
+        """The washer outcome when Python fixes it regardless of the agent, else None."""
+        a = ctx.appliance
+        if a["steps_completed"] >= a["duration_steps"]:
+            run, reason = False, "forced: cycle already complete"
+        elif a["steps_completed"] > 0:
+            run, reason = True, "forced: non-interruptible cycle in progress"
+        elif ctx.t < a["released_step"]:
+            run, reason = False, "forced: before release step"
+        else:
+            return None
+        self.log.append(
+            LLMDecisionLogEntry(
+                t=ctx.t,
+                clock=ctx.clock,
+                appliance="washer",
+                prompt="",
+                wtp=float("nan"),
+                reason=reason,
+                cost_now=ctx.cost_now,
+                utility=float("nan"),
+                run=run,
+                cached=False,
+                forced=True,
+                wtp_scale=self.wtp_scale,
+                dry_run=self._dry_run,
+                provider=self.provider,
+                model_id=self.model_id,
+                sdk_version=self.sdk_version,
+            )
+        )
+        return Decision(run=run, wtp=None, reason=reason)
+
+    @property
+    def prompted_decisions(self) -> int:
+        """Decisions that needed a model answer (live, cached, or dry-run stub)."""
+        return sum(1 for e in self.log if not e.forced)
 
     def log_to_dataframe(self) -> pd.DataFrame:
         """The full per-step LLM decision log for `results/*/llm_decision_log.parquet`."""
@@ -229,6 +284,11 @@ class LLMAgent:
 
     # -- dry run --------------------------------------------------------
 
+    # Dry-run stub: persona price_sensitivity -> WTP multiplier, so archetypes
+    # differ and the Phase 3 pipeline (calibration, per-archetype tables) has
+    # something non-degenerate to chew on. Not a behavioural claim.
+    _STUB_SENSITIVITY_MULT = {"low": 1.5, "moderate": 1.0, "high": 0.6}
+
     def _dry_run_response(self, ctx: DecisionContext, schema):
         """Deterministic stand-in for `--dry-run`: no API call, no spend.
 
@@ -237,19 +297,20 @@ class LLMAgent:
         WTP behaviour. Echoes the true input values by construction.
         """
         a = ctx.appliance
+        mult = self._STUB_SENSITIVITY_MULT.get(ctx.household.get("price_sensitivity"), 1.0)
         if a["type"] == "hvac":
-            deviation = abs(a["indoor_temp_c"] - a["setpoint_c"])
-            wtp = max(0.0, deviation - a["tolerance_band_c"]) * 0.5
+            over_ceiling = a["indoor_temp_c"] - (a["setpoint_c"] + a["tolerance_band_c"])
+            wtp = mult * 0.8 * max(0.0, over_ceiling + 0.5)
             return schema(
                 wtp=wtp,
-                reason="dry-run stub: proportional to band violation",
+                reason="dry-run stub: rises as indoor temp nears/exceeds the ceiling",
                 echo_indoor_temp_c=a["indoor_temp_c"],
                 echo_band_lo_c=a["setpoint_c"] - a["tolerance_band_c"],
                 echo_band_hi_c=a["setpoint_c"] + a["tolerance_band_c"],
             )
         steps_until_deadline = a["deadline_step"] - ctx.t
         slack = a["slack_steps"]
-        wtp = 5.0 if slack <= 0 else max(0.0, 1.0 - 0.2 * slack)
+        wtp = 3.0 if slack <= 0 else mult * max(0.0, 0.8 - 0.15 * slack)
         return schema(
             wtp=wtp,
             reason="dry-run stub: proportional to shrinking slack",

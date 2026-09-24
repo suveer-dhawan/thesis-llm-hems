@@ -32,11 +32,18 @@ normally set via `config/experiment.yaml`'s `llm.provider`):
   identical prompts return an identical wtp; the seed is required too.
 
 Exposes one operation per client: `complete_json(prompt, schema) ->
-(parsed, was_cached)`, with a disk-backed cache keyed on `(provider,
-prompt)` (§15 cost guard -- identical calls to the same provider are never
-re-sent, and switching providers can't collide on a stale cache entry) and a
-bounded retry with exponential backoff on transient API errors or schema-
-validation failure (§1 pydantic contract). `LLMClient.model_id` /
+(parsed, was_cached)`, with a disk-backed cache keyed on `(provider, model,
+temperature, seed, prompt)` (§15 cost guard -- an identical call is never
+re-sent, and a different provider, model, or seed can't collide on a stale
+entry; Phase 3's multi-seed spread depends on the seed being in the key).
+A `.jsonl` cache path is append-only and shared by every client in the
+process that names the same file, so re-runs cost zero live calls; a legacy
+`.json` path is still read and rewritten whole. `LLMClient.stats` counts
+live calls vs cache hits. The Gemini rate-limit throttle is shared across
+all clients for the same model, so building one client per seed can't
+exceed the per-minute quota. Transient API errors and schema-validation
+failures (§1 pydantic contract) get a bounded retry with exponential
+backoff. `LLMClient.model_id` /
 `.sdk_version` let callers record which exact backend produced a run's
 results (BUILD_SPEC.md design principle §3 -- every run writes its resolved
 config).
@@ -110,6 +117,10 @@ class _Backend(abc.ABC):
     @abc.abstractmethod
     def sdk_version(self) -> str: ...
 
+    def cache_identity(self) -> dict:
+        """Everything besides the prompt that can change the response."""
+        return {"provider": self.name}
+
 
 class _MatildaBackend(_Backend):
     name = "matilda"
@@ -180,19 +191,23 @@ class _GeminiBackend(_Backend):
         self._max_output_tokens = max_output_tokens
         self._temperature = temperature
         self._seed = seed
-        self._call_times: list[float] = []
+
+    # Shared by every backend instance for the same model: the quota is per
+    # project+model, not per client object.
+    _call_times_by_model: dict[str, list[float]] = {}
 
     def _throttle(self) -> None:
         """Free-tier guard: keep to `rate_limit_rpm` calls per rolling 60s window."""
+        times = self._call_times_by_model.setdefault(self._model, [])
         now = time.monotonic()
-        self._call_times = [t for t in self._call_times if now - t < 60.0]
-        if len(self._call_times) >= self._rate_limit_rpm:
-            sleep_for = 60.0 - (now - self._call_times[0]) + 0.1
+        times[:] = [t for t in times if now - t < 60.0]
+        if len(times) >= self._rate_limit_rpm:
+            sleep_for = 60.0 - (now - times[0]) + 0.1
             if sleep_for > 0:
                 time.sleep(sleep_for)
             now = time.monotonic()
-            self._call_times = [t for t in self._call_times if now - t < 60.0]
-        self._call_times.append(now)
+            times[:] = [t for t in times if now - t < 60.0]
+        times.append(now)
 
     def call(self, prompt: str, schema: Type[BaseModel]) -> dict:
         from google import genai
@@ -223,6 +238,14 @@ class _GeminiBackend(_Backend):
     def model_id(self) -> str:
         return self._model
 
+    def cache_identity(self) -> dict:
+        return {
+            "provider": self.name,
+            "model": self._model,
+            "temperature": self._temperature,
+            "seed": self._seed,
+        }
+
     @property
     def sdk_version(self) -> str:
         try:
@@ -231,11 +254,51 @@ class _GeminiBackend(_Backend):
             return "google-genai==unknown"
 
 
+class _DiskCache:
+    """key -> response dict, persisted to disk; one shared instance per path.
+
+    `.jsonl`: append-only, one `{"key", "value"}` object per line -- cheap to
+    write after every live call and safe to grow to tens of thousands of
+    entries. Anything else: the legacy single JSON dict, rewritten whole.
+    """
+
+    _instances: dict[Path, "_DiskCache"] = {}
+
+    @classmethod
+    def for_path(cls, path: Path) -> "_DiskCache":
+        resolved = path.resolve()
+        if resolved not in cls._instances:
+            cls._instances[resolved] = cls(resolved)
+        return cls._instances[resolved]
+
+    def __init__(self, path: Path):
+        self.path = path
+        self._jsonl = path.suffix == ".jsonl"
+        self.data: dict[str, dict] = {}
+        if path.exists():
+            if self._jsonl:
+                for line in path.read_text().splitlines():
+                    if line.strip():
+                        entry = json.loads(line)
+                        self.data[entry["key"]] = entry["value"]
+            else:
+                self.data = json.loads(path.read_text())
+
+    def put(self, key: str, value: dict) -> None:
+        self.data[key] = value
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        if self._jsonl:
+            with self.path.open("a") as f:
+                f.write(json.dumps({"key": key, "value": value}) + "\n")
+        else:
+            self.path.write_text(json.dumps(self.data, indent=2))
+
+
 class LLMClient:
     """Provider-agnostic structured-output client (BUILD_SPEC.md §14).
 
     Selects a backend (`matilda` | `gemini`) and wraps it with a disk cache
-    keyed on `(provider, prompt)` and a bounded retry with exponential
+    keyed on `(provider, model, temperature, seed, prompt)` and a bounded retry with exponential
     backoff on transient errors or schema-validation failure. Agent code
     (`agents/llm_agent.py`) only ever calls `complete_json`; it never touches
     a provider SDK directly.
@@ -266,10 +329,9 @@ class LLMClient:
                 api_key, model, rate_limit_rpm, max_output_tokens, temperature, seed
             )
         self._max_retries = max_retries
-        self._cache_path = Path(cache_path) if cache_path else None
-        self._cache: dict[str, dict] = {}
-        if self._cache_path and self._cache_path.exists():
-            self._cache = json.loads(self._cache_path.read_text())
+        self._disk = _DiskCache.for_path(Path(cache_path)) if cache_path else None
+        self._cache: dict[str, dict] = self._disk.data if self._disk else {}
+        self.stats = {"live_calls": 0, "cache_hits": 0}
 
     @property
     def model_id(self) -> str:
@@ -279,26 +341,37 @@ class LLMClient:
     def sdk_version(self) -> str:
         return self._backend.sdk_version
 
-    def complete_json(self, prompt: str, schema: Type[T]) -> tuple[T, bool]:
-        """Returns `(parsed_response, was_cached)`.
+    def cache_key(self, prompt: str) -> str:
+        """Exact-prompt key, scoped to everything else that changes the answer.
 
-        Caches on `(provider, prompt)`, so any change to the context
-        (indoor temp, clock, deadline, ...) that a template renders into the
-        prompt naturally busts the cache, and switching providers for the
-        same prompt text never hits a stale entry from the other provider.
+        Any change to the context (indoor temp, clock, deadline, ...) that a
+        template renders into the prompt busts the cache; so does a different
+        provider, model, temperature, or seed.
         """
-        key = hashlib.sha256(f"{self.provider}:{prompt}".encode("utf-8")).hexdigest()
+        identity = {**self._backend.cache_identity(), "prompt": prompt}
+        return hashlib.sha256(json.dumps(identity, sort_keys=True).encode("utf-8")).hexdigest()
+
+    def is_cached(self, prompt: str) -> bool:
+        return self.cache_key(prompt) in self._cache
+
+    def complete_json(self, prompt: str, schema: Type[T]) -> tuple[T, bool]:
+        """Returns `(parsed_response, was_cached)`."""
+        key = self.cache_key(prompt)
         cached = self._cache.get(key)
         if cached is not None:
+            self.stats["cache_hits"] += 1
             return schema.model_validate(cached), True
 
         last_error: Exception | None = None
         for attempt in range(self._max_retries + 1):
             try:
+                self.stats["live_calls"] += 1
                 raw = self._backend.call(prompt, schema)
                 parsed = schema.model_validate(raw)
-                self._cache[key] = parsed.model_dump()
-                self._flush_cache()
+                if self._disk is not None:
+                    self._disk.put(key, parsed.model_dump())
+                else:
+                    self._cache[key] = parsed.model_dump()
                 return parsed, False
             except Exception as exc:  # noqa: BLE001 -- provider raises opaque SDK error types
                 last_error = exc
@@ -315,11 +388,32 @@ class LLMClient:
             f"[provider={self.provider}]: {last_error}"
         ) from last_error
 
-    def _flush_cache(self) -> None:
-        if self._cache_path is None:
-            return
-        self._cache_path.parent.mkdir(parents=True, exist_ok=True)
-        self._cache_path.write_text(json.dumps(self._cache, indent=2))
+
+def build_llm_client(
+    provider: str, llm_cfg: dict, cache_path: str | Path | None, seed: int | None = None
+) -> LLMClient:
+    """An `LLMClient` for `provider` from experiment.yaml's `llm:` block.
+
+    Pulls provider-specific settings (model, rate limit, base_url, ...) out of
+    `llm_cfg`. `seed` overrides `llm.seed` (Phase 3's multi-seed spread).
+    """
+    kwargs: dict = {"provider": provider, "cache_path": cache_path}
+    provider_cfg = llm_cfg.get(provider) or {}
+    if provider == "gemini":
+        for key in ("model", "rate_limit_rpm", "max_output_tokens"):
+            if provider_cfg.get(key) is not None:
+                kwargs[key] = provider_cfg[key]
+        # Top-level (provider-agnostic) reproducibility knobs -- only Gemini's
+        # API exposes them; Matilda's does not.
+        if llm_cfg.get("temperature") is not None:
+            kwargs["temperature"] = llm_cfg["temperature"]
+        resolved_seed = seed if seed is not None else llm_cfg.get("seed")
+        if resolved_seed is not None:
+            kwargs["seed"] = resolved_seed
+    elif provider == "matilda":
+        if provider_cfg.get("base_url"):
+            kwargs["base_url"] = provider_cfg["base_url"]
+    return LLMClient(**kwargs)
 
 
 if __name__ == "__main__":

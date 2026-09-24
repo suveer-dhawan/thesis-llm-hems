@@ -155,3 +155,46 @@ def test_model_id_and_sdk_version_recorded(monkeypatch):
 
     assert gemini_client.provider == "gemini"
     assert gemini_client.model_id == "gemini-3.5-flash-lite"
+
+
+def _fake_hvac_payload(wtp=1.0):
+    return {"wtp": wtp, "reason": "x", "echo_indoor_temp_c": 27.0,
+            "echo_band_lo_c": 22.0, "echo_band_hi_c": 26.0}
+
+
+def test_seed_is_part_of_the_cache_key(tmp_path, monkeypatch):
+    """Phase 3 multi-seed: seed 43 must not be served seed 42's cached answer."""
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    from hems.llm import client as client_module
+
+    monkeypatch.setattr(client_module._GeminiBackend, "call",
+                        lambda self, p, s: _fake_hvac_payload(float(self._seed)))
+    path = tmp_path / "cache.jsonl"
+    a = LLMClient(provider="gemini", seed=42, cache_path=path)
+    b = LLMClient(provider="gemini", seed=43, cache_path=path)
+    ra, ca = a.complete_json("same prompt", HVACWTPResponse)
+    rb, cb = b.complete_json("same prompt", HVACWTPResponse)
+    assert (ra.wtp, rb.wtp) == (42.0, 43.0)
+    assert not ca and not cb
+
+
+def test_jsonl_cache_second_run_makes_zero_live_calls(tmp_path, monkeypatch):
+    """Re-running identical prompts in a fresh process-equivalent hits disk only."""
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    from hems.llm import client as client_module
+
+    monkeypatch.setattr(client_module._GeminiBackend, "call", lambda self, p, s: _fake_hvac_payload())
+    path = tmp_path / "cache.jsonl"
+    first = LLMClient(provider="gemini", cache_path=path)
+    for i in range(3):
+        first.complete_json(f"prompt {i}", HVACWTPResponse)
+    assert first.stats == {"live_calls": 3, "cache_hits": 0}
+    assert len(path.read_text().splitlines()) == 3  # append-only, one line per call
+
+    client_module._DiskCache._instances.clear()  # simulate a new process
+    monkeypatch.setattr(client_module._GeminiBackend, "call",
+                        lambda self, p, s: pytest.fail("live call on a cached prompt"))
+    second = LLMClient(provider="gemini", cache_path=path)
+    for i in range(3):
+        second.complete_json(f"prompt {i}", HVACWTPResponse)
+    assert second.stats == {"live_calls": 0, "cache_hits": 3}

@@ -87,3 +87,62 @@ noisy_milp:
   price_noise_std: 0.02
 
 results_dir: results             # timestamped run folders written here (gitignored)
+
+# ---------------------------------------------------------------------------
+# Phase 3 (elasticity) -- experiments/run_phase3.py, experiments/calibrate.py.
+# ---------------------------------------------------------------------------
+phase3:
+  persona_assignment: config/persona_assignment.csv   # built by experiments/build_personas.py
+
+  # Each date is simulated twice with only the tariff differing: a baseline
+  # day (no CPP at all) and a CPP day (exactly the event below). Same base
+  # load, same weather, same household -> dQ is purely the agent's response.
+  # Adding dates multiplies LLM spend linearly (see the budget gate).
+  dates: ["2013-01-18"]            # hot summer Friday (Phase 1 reference day)
+  cpp:
+    start: "17:00"
+    end: "20:00"                    # inside the 15:00-21:00 summer peak -> 0.55 -> 1.20 $/kWh
+    severity: moderate
+  rebound_hours: 2                  # post-event window for the rebound-peak metric
+  elasticity_method: base           # base = BUILD_SPEC §10 formula; midpoint also reported
+
+  seeds: [42, 43, 44]               # run-to-run spread (T=0 is deterministic per seed)
+  llm_cache_path: results/phase3/llm_cache.jsonl   # append-only, reused across every Phase 3 run
+
+  calibration:
+    # PRE-REGISTERED (fixed before any live calibration run):
+    #   split  : `fraction` of households per archetype -> calibration, rest held out,
+    #            shuffled within archetype by `split_seed`.
+    #   fit    : one global wtp_scale, chosen from `scale_grid` at `fit_seed` as the
+    #            grid value whose POOLED whole-household (total) elasticity on the
+    #            calibration subset is inside `conway_range` and closest to
+    #            `target_elasticity`; if none is inside, the closest overall, flagged.
+    #   report : elasticity on the held-out subset at the frozen scale.
+    # target -0.25 = arithmetic midpoint of Conway 2020's -0.026..-0.47 range
+    # (CONFIRM against Conway's own central estimate if one is reported).
+    fraction: 0.5
+    split_seed: 42
+    fit_seed: 42
+    target_elasticity: -0.25
+    conway_range: [-0.47, -0.026]
+    scale_grid: [0.25, 0.5, 1.0, 2.0, 4.0]
+
+  scenario:
+    # Discriminating scenario (BUILD_SPEC §12): one unexpected CPP spike, washer
+    # deadline near it. Coherent satisficing = defer past the spike when slack
+    # allows (slack_remains), run through it when the deadline forces it
+    # (deadline_forces). Judged against the scenario's TRUE deadline.
+    spike:
+      start: "18:00"
+      end: "19:00"
+      severity: severe
+    variants:
+      slack_remains:   {washer_release: "17:30", washer_deadline: "21:30"}
+      deadline_forces: {washer_release: "17:30", washer_deadline: "20:00"}
+
+  live_slice:
+    households: [8596070, 9911140]  # C (burden 7.6%) vs A (1.35%): same +/-2.0 band, same
+                                    # evening window -> the contrast isolates price_sensitivity
+    seed: 42
+    max_live_households: 3          # budget gate: a live run over more households than this
+                                    # refuses to start without --approve-budget

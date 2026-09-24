@@ -1,0 +1,37 @@
+{
+  "pre_registered": {
+    "target_elasticity": -0.25,
+    "conway_range": [
+      -0.47,
+      -0.026
+    ],
+    "rule": "grid value with pooled total elasticity inside the range and closest to target on the calibration subset; closest overall if none inside (flagged)",
+    "scale_grid": [
+      0.25,
+      0.5,
+      1.0,
+      2.0,
+      4.0
+    ],
+    "fraction": 0.5,
+    "split_seed": 42,
+    "fit_seed": 42
+  },
+  "calibration_ids": [
+    8632083,
+    9911140
+  ],
+  "held_out_ids": [
+    8596070
+  ],
+  "calibration_archetypes": {
+    "8632083": "C",
+    "9911140": "A"
+  },
+  "held_out_archetypes": {
+    "8596070": "C"
+  },
+  "frozen_wtp_scale": 0.5,
+  "calibration_elasticity_total": -0.105422446406053,
+  "fit_inside_range": true
+}

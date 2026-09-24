@@ -1,0 +1,116 @@
+{
+  "households": [
+    8596070
+  ],
+  "seed": 42,
+  "wtp_scale": 0.5,
+  "method": "base",
+  "window": [
+    "17:00",
+    "20:00"
+  ],
+  "p_base": 0.55,
+  "p_cpp": 1.2,
+  "conway_range": [
+    -0.47,
+    -0.026
+  ],
+  "aggregate": [
+    {
+      "agent": "milp",
+      "n": 1,
+      "elasticity_hvac": -0.8461538461538463,
+      "elasticity_washer": NaN,
+      "elasticity_flexible": -0.8461538461538463,
+      "elasticity_total": -0.15737517287424296,
+      "in_conway_total": true
+    },
+    {
+      "agent": "noisy_milp",
+      "n": 1,
+      "elasticity_hvac": -0.8461538461538463,
+      "elasticity_washer": NaN,
+      "elasticity_flexible": -0.8461538461538463,
+      "elasticity_total": -0.11185113630586203,
+      "in_conway_total": true
+    },
+    {
+      "agent": "llm",
+      "n": 1,
+      "elasticity_hvac": -0.8461538461538463,
+      "elasticity_washer": NaN,
+      "elasticity_flexible": -0.8461538461538463,
+      "elasticity_total": -0.05988349937394524,
+      "in_conway_total": true
+    }
+  ],
+  "aggregate_midpoint": [
+    {
+      "agent": "milp",
+      "n": 1,
+      "elasticity_hvac": -2.6923076923076925,
+      "elasticity_washer": NaN,
+      "elasticity_flexible": -2.6923076923076925,
+      "elasticity_total": -0.2760397497239603,
+      "in_conway_total": true
+    },
+    {
+      "agent": "noisy_milp",
+      "n": 1,
+      "elasticity_hvac": -2.6923076923076925,
+      "elasticity_washer": NaN,
+      "elasticity_flexible": -2.6923076923076925,
+      "elasticity_total": -0.19053840709891667,
+      "in_conway_total": true
+    },
+    {
+      "agent": "llm",
+      "n": 1,
+      "elasticity_hvac": -2.6923076923076925,
+      "elasticity_washer": NaN,
+      "elasticity_flexible": -2.6923076923076925,
+      "elasticity_total": -0.09876403860262996,
+      "in_conway_total": true
+    }
+  ],
+  "by_archetype": [
+    {
+      "archetype": "C",
+      "n": 1,
+      "elasticity_hvac": -0.8461538461538463,
+      "elasticity_washer": NaN,
+      "elasticity_flexible": -0.8461538461538463,
+      "elasticity_total": -0.05988349937394524,
+      "in_conway_total": true,
+      "agent": "llm"
+    },
+    {
+      "archetype": "C",
+      "n": 1,
+      "elasticity_hvac": -0.8461538461538463,
+      "elasticity_washer": NaN,
+      "elasticity_flexible": -0.8461538461538463,
+      "elasticity_total": -0.15737517287424296,
+      "in_conway_total": true,
+      "agent": "milp"
+    },
+    {
+      "archetype": "C",
+      "n": 1,
+      "elasticity_hvac": -0.8461538461538463,
+      "elasticity_washer": NaN,
+      "elasticity_flexible": -0.8461538461538463,
+      "elasticity_total": -0.11185113630586203,
+      "in_conway_total": true,
+      "agent": "noisy_milp"
+    }
+  ],
+  "llm_archetype_ordering": {
+    "values": {
+      "C": -0.05988349937394524
+    },
+    "C_more_elastic_than_B": false,
+    "B_more_elastic_than_A": false,
+    "C_more_elastic_than_A": false
+  }
+}

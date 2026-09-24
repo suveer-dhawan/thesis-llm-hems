@@ -1,0 +1,54 @@
+{
+  "plan": {
+    "households": 24,
+    "calibration_households": 12,
+    "held_out_households": 12,
+    "dates": [
+      "2013-01-18"
+    ],
+    "simulated_days_per_household_per_seed": 2,
+    "seeds": [
+      42,
+      43,
+      44
+    ],
+    "scale_grid": [
+      0.25,
+      0.5,
+      1.0,
+      2.0,
+      4.0
+    ],
+    "scenario_variants": 2,
+    "appliances": 2,
+    "steps_per_day": 48
+  },
+  "formula_upper_bound": {
+    "formula": "2 appliances x 48 steps x (days x grid x n_cal + days x seeds x N + variants x N)",
+    "terms": {
+      "calibration": 11520,
+      "evaluation_all_seeds": 13824,
+      "scenario": 4608
+    },
+    "total": 29952
+  },
+  "dry_run_projection": {
+    "prompted_decisions": 15576,
+    "prompted_by_appliance": {
+      "hvac": 13824,
+      "washer": 1752
+    },
+    "distinct_prompts": 2153,
+    "already_in_disk_cache": 0,
+    "cache_note": "",
+    "projected_live_calls": 2153,
+    "caveat": "counted on the dry-run stub's trajectories; the real LLM's decisions change which states (and so which prompts) occur. Treat as an estimate; the formula bound is the hard ceiling."
+  },
+  "wall_clock_at_rate_limit": {
+    "rate_limit_rpm": 5.0,
+    "projected_hours": 7.2,
+    "upper_bound_hours": 99.8
+  },
+  "dry_run_simulation_seconds": 14.9,
+  "dry_run_fitted_scale_used": 0.5
+}

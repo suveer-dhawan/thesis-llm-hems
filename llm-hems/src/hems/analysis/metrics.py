@@ -52,3 +52,23 @@ def summary_dict(result: RunResult) -> dict:
         "washer_completed_by_step": result.washer_completed_by_step,
         "washer_deadline_step": result.washer_deadline_step,
     }
+
+
+def curve_metrics(load_kwh: list[float], clocks: list[str]) -> dict:
+    """PAR, peak kW, and time-of-peak for any curve (e.g. a population sum)."""
+    idx = max(range(len(load_kwh)), key=lambda i: load_kwh[i])
+    return {
+        "par": round(peak_to_average_ratio(load_kwh), 3),
+        "peak_kw": round(peak_kw(load_kwh), 3),
+        "time_of_peak": clocks[idx],
+    }
+
+
+def rebound_peak_kw(load_kwh: list[float], start_step: int, n_steps: int) -> float:
+    """Peak kW in the `n_steps` after an event ends (`start_step` = first post-event step).
+
+    Compared CPP day vs baseline day, this is the rebound: deferred load
+    landing just after the price spike (BUILD_SPEC.md §13 Phase 4).
+    """
+    window = load_kwh[start_step : start_step + n_steps]
+    return peak_kw(window) if window else float("nan")

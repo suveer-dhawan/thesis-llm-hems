@@ -32,7 +32,7 @@ from hems.environment.appliances import HVACParams, WasherParams
 from hems.environment.household import Household
 from hems.environment.simulator import RunResult, run_simulation
 from hems.environment.tariff import Tariff
-from hems.llm.client import LLMClient
+from hems.llm.client import build_llm_client  # noqa: F401 -- re-exported for older scripts
 
 AGENT_NAMES = ["stub", "milp", "noisy_milp", "llm"]
 
@@ -45,27 +45,6 @@ DEFAULT_EXPERIMENT_CONFIG = "config/experiment.yaml"
 def load_llm_config(experiment_path: str = DEFAULT_EXPERIMENT_CONFIG) -> dict:
     """The `llm:` block of experiment.yaml -- provider selection + per-provider settings."""
     return yaml.safe_load(Path(experiment_path).read_text()).get("llm", {})
-
-
-def build_llm_client(provider: str, llm_cfg: dict, cache_path: str | None) -> LLMClient:
-    """Builds an `LLMClient` for `provider`, pulling provider-specific settings
-    (model, rate limit, base_url, ...) out of experiment.yaml's `llm:` block."""
-    kwargs: dict = {"provider": provider, "cache_path": cache_path}
-    provider_cfg = llm_cfg.get(provider) or {}
-    if provider == "gemini":
-        for key in ("model", "rate_limit_rpm", "max_output_tokens"):
-            if provider_cfg.get(key) is not None:
-                kwargs[key] = provider_cfg[key]
-        # Top-level (provider-agnostic) reproducibility knobs -- only Gemini's
-        # API exposes them (see llm/client.py); Matilda's does not.
-        if llm_cfg.get("temperature") is not None:
-            kwargs["temperature"] = llm_cfg["temperature"]
-        if llm_cfg.get("seed") is not None:
-            kwargs["seed"] = llm_cfg["seed"]
-    elif provider == "matilda":
-        if provider_cfg.get("base_url"):
-            kwargs["base_url"] = provider_cfg["base_url"]
-    return LLMClient(**kwargs)
 
 
 def load_environment(

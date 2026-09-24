@@ -58,8 +58,9 @@ tests/           pytest suite mirroring src/hems/environment + analysis
 
 Phases 0-2 implemented: tariff/appliance/household physics, the simulator
 loop, `stub`/`milp`/`noisy_milp`/`llm` agents, and analysis/plots all run
-end-to-end. `analysis/elasticity.py` and the calibration split (Phase 3) are
-still pending.
+end-to-end. The Phase 3 harness (personas, elasticity, calibration, budget
+gate) is built and verified on a dry run plus a two-household live slice; the
+full 24-household live run is waiting on budget sign-off (see below).
 
 ```bash
 pip install -e .
@@ -67,6 +68,49 @@ python experiments/run_single.py --agent stub
 python experiments/run_single.py --agent llm            # calls the live API
 python experiments/run_single.py --agent llm --dry-run  # no API spend
 ```
+
+## Phase 3: elasticity harness
+
+**Personas** (`config/persona.yaml` -> `experiments/build_personas.py` ->
+committed `config/persona_assignment.csv`). The generic schema is instantiated
+from SGSC data:
+- `cost_sensitivity` = energy burden (annual kWh x time-weighted tariff rate /
+  income-tier midpoint), bucketed into terciles as archetype A/B/C.
+- `thermal_tolerance` = comfort band (children or ducted ±1.5, split ±2.0, no
+  aircon ±2.5).
+- `schedule_profile` = washer window by load-shape cluster.
+
+The report is `results/phase3/persona/persona_report.md`.
+
+**Harness** (`src/hems/phase3.py`, `experiments/run_phase3.py`,
+`experiments/calibrate.py`, all settings in `experiment.yaml` -> `phase3:`).
+Each date is simulated twice, once with no CPP and once with one CPP event.
+Only the tariff changes between the two. `analysis/elasticity.py` reports the
+arc elasticity over the CPP window per appliance, per household, pooled, and
+by archetype, for LLM, MILP and noisy-MILP.
+
+**Cost control:**
+- The LLM cache is `results/phase3/llm_cache.jsonl`. It is append-only and
+  keyed on provider, model, temperature, seed and exact prompt, so a re-run
+  makes zero live calls.
+- Washer steps whose outcome Python already fixes (not yet released,
+  mid-cycle, done) skip the prompt.
+- `--dry-run` swaps in a stub LLM.
+- `--budget` projects live calls and wall-clock without spending anything.
+- A live run over more than `live_slice.max_live_households` households
+  refuses to start without `--approve-budget`.
+
+```bash
+python experiments/build_personas.py
+python experiments/run_phase3.py --dry-run --households 8596070,9911140,8632083 --out results/phase3/dryrun_smoke
+python experiments/run_phase3.py --budget                 # projected spend, no calls
+python experiments/run_phase3.py --out results/phase3/live_slice   # 2-household live slice
+```
+
+Note: if `import hems` fails in the venv on macOS, the editable-install
+`.pth` file has the `hidden` flag set, and Python 3.12 skips hidden `.pth`
+files. Either run with `PYTHONPATH=src` or run
+`chflags nohidden .venv/lib/python3.12/site-packages/__editable__.hems-0.1.0.pth`.
 
 ## Reproducibility: the LLM agent
 

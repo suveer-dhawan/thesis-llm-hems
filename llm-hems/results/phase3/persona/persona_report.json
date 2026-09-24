@@ -1,0 +1,36 @@
+{
+  "time_weighted_avg_rate": 0.3024383561643836,
+  "bucketing": "terciles",
+  "distribution": {
+    "A": 8,
+    "B": 8,
+    "C": 8
+  },
+  "distribution_fixed": {
+    "A": 5,
+    "B": 7,
+    "C": 12
+  },
+  "distribution_income_tier": {
+    "A": 9,
+    "B": 8,
+    "C": 7
+  },
+  "n_moved_vs_income_tier": 17,
+  "lopsided_in_use": false,
+  "lopsided_fixed": false,
+  "tercile_ranges": {
+    "A": [
+      0.013518657185458376,
+      0.03180396387671233
+    ],
+    "B": [
+      0.032541178972602745,
+      0.07474763972602741
+    ],
+    "C": [
+      0.07546370407797681,
+      0.12183128178784686
+    ]
+  }
+}
