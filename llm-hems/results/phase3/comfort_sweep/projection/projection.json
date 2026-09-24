@@ -1,0 +1,30 @@
+{
+  "households": {
+    "8211127": "comfort_prioritising",
+    "8568499": "comfort_prioritising",
+    "9911140": "balanced",
+    "8596070": "balanced",
+    "10278838": "comfort_flexible",
+    "10444433": "comfort_flexible"
+  },
+  "scales": [
+    0.4,
+    0.6,
+    0.8,
+    1.0
+  ],
+  "decomposition_scale_on_stub": 0.4,
+  "llm_window": [
+    "12:00",
+    "22:00"
+  ],
+  "prompted_decisions": 1200,
+  "distinct_prompts_on_stub_trajectories": 403,
+  "projected_live_calls": 402,
+  "projected_cache_hit_rate": 0.665,
+  "structural_upper_bound_live_calls": 750,
+  "projected_wall_minutes_at_rpm": 80.4,
+  "upper_bound_wall_minutes_at_rpm": 150.0,
+  "rate_limit_rpm": 5,
+  "note": "projection runs the dry-run stub; live trajectories differ (estimate)"
+}
