@@ -24,10 +24,10 @@ started), seed 42, one date, baseline + CPP day.
            uniform factors (1.0/1.0/1.0) -- the decomposition of how much
            heterogeneity the LLM persona + band produce on their own.
 
-The LLM is only consulted inside `LLM_WINDOW` (12:00-22:00: the 17:00-20:00
-CPP window with lead-in) to keep the sweep cheap. Outside it the HVAC runs a
-price-blind thermostat (on iff indoor is above the band ceiling), identical
-on both days; the final population run uses all 48 steps.
+The LLM is only consulted inside `LLM_WINDOW` (14:00-21:00: the 17:00-20:00
+CPP window with 3h lead-in, vs the ~1h RC time constant) to keep the sweep
+cheap. Outside it the HVAC runs a price-blind thermostat (on iff indoor is
+above the band ceiling), identical on both days; the final population run uses all 48 steps.
 
 Every call goes through the shared Phase 3 JSONL cache
 (`phase3.llm_cache_path`), so re-running is free. `sweep --project` runs the
@@ -79,8 +79,8 @@ GRID_CLOCK, GRID_T = "17:30", 35  # inside the CPP window
 GRID_TEMPS = [25.0, 26.0, 26.5, 27.0, 27.5, 28.0]
 PREMISE_STATES = {"comfortable": 24.0, "mild": 26.5, "contested": 28.0}
 COMMON_BAND_C = 2.0
-LLM_WINDOW = ("12:00", "22:00")
-DEFAULT_SCALES = "0.4,0.6,0.8,1.0"
+LLM_WINDOW = ("14:00", "21:00")
+DEFAULT_SCALES = "0.3,0.5,0.7,1.0"
 
 
 class WindowedHVACAgent:
@@ -321,26 +321,42 @@ def _ordered(e_most: float, e_mid: float, e_least: float) -> bool:
     return all(v == v for v in vals) and e_most <= e_mid <= e_least and e_most < e_least
 
 
+SHORT = {"comfort_prioritising": "prio", "balanced": "bal", "comfort_flexible": "flex"}
+
+
+def _group_row(recs: list[ElasticityRecord], component: str, method: str) -> dict:
+    """Pooled elasticity per comfort orientation and per burden archetype, plus orderings."""
+    row: dict = {"pooled": _pooled(recs, component, method)}
+    eo = {
+        o: _pooled([r for r in recs if ORIENTATION_OF[r.household_id] == o], component, method)
+        for o in ORIENTATIONS
+    }
+    ea = {a: _pooled([r for r in recs if r.archetype == a], component, method) for a in "ABC"}
+    row.update({SHORT[o]: v for o, v in eo.items()})
+    row["flex>bal>prio"] = _ordered(
+        eo["comfort_flexible"], eo["balanced"], eo["comfort_prioritising"]
+    )
+    row.update({f"arch {a}": v for a, v in ea.items()})
+    row["C>B>A"] = _ordered(ea["C"], ea["B"], ea["A"])
+    return row
+
+
 def scale_tables(
     sweep: Sweep, scales: list[float], method: str
-) -> tuple[pd.DataFrame, pd.DataFrame]:
-    a_rows, c_rows = [], []
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """(flexible-layer table, whole-household table, calibration summary) over the grid."""
+    flex_rows, total_rows, c_rows = [], [], []
     for s in scales:
         recs = sweep.at(s, "graded")
-        row: dict = {"global_scale": s}
-        e = {}
-        for o in ORIENTATIONS:
-            grp = [r for r in recs if ORIENTATION_OF[r.household_id] == o]
-            e[o] = _pooled(grp, "flexible", method)
-            row[f"{o} e_flex"] = e[o]
-            row[f"{o} kWh base->cpp"] = (
-                f"{sum(r.q_base['flexible'] for r in grp):.0f}->"
-                f"{sum(r.q_cpp['flexible'] for r in grp):.0f}"
-            )
-        row["F>B>P elastic"] = _ordered(
-            e["comfort_flexible"], e["balanced"], e["comfort_prioritising"]
+        flex_rows.append(
+            {
+                "global_scale": s,
+                **_group_row(recs, "flexible", method),
+                "HVAC kWh base->cpp": f"{sum(r.q_base['flexible'] for r in recs):.0f}->"
+                f"{sum(r.q_cpp['flexible'] for r in recs):.0f}",
+            }
         )
-        a_rows.append(row)
+        total_rows.append({"global_scale": s, **_group_row(recs, "total", method)})
         e_total = _pooled(recs, "total", method)
         c_rows.append(
             {
@@ -350,7 +366,7 @@ def scale_tables(
                 "in_conway": in_conway_range(e_total),
             }
         )
-    return pd.DataFrame(a_rows), pd.DataFrame(c_rows)
+    return pd.DataFrame(flex_rows), pd.DataFrame(total_rows), pd.DataFrame(c_rows)
 
 
 def choose_scale(c: pd.DataFrame, cal: dict) -> tuple[float, bool]:
@@ -438,7 +454,7 @@ def run_sweep(args, out: Path) -> None:
     method = runner.cfg.raw["elasticity_method"]
     t0 = time.time()
 
-    a, c = scale_tables(sweep, scales, method)
+    a, a_total, c = scale_tables(sweep, scales, method)
     best, in_range = choose_scale(c, runner.cfg.calibration)
     decomp = decomposition_table(sweep, best, method)
     log = pd.concat(sweep.logs, ignore_index=True)
@@ -471,8 +487,8 @@ def run_sweep(args, out: Path) -> None:
     log.to_parquet(out / "sweep_llm_log.parquet")
     traj = trajectory_wtp_table(log)
     hh = per_household_table(sweep, method)
-    for name, df in (("a_elasticity_by_comfort", a), ("b_decomposition", decomp),
-                     ("c_total_vs_scale", c), ("per_household", hh),
+    for name, df in (("a_flexible_by_group", a), ("a_total_by_group", a_total),
+                     ("b_decomposition", decomp), ("c_total_vs_scale", c), ("per_household", hh),
                      ("trajectory_wtp", traj)):  # fmt: skip
         df.to_csv(out / f"{name}.csv", index=False)
     stats = {
@@ -496,10 +512,17 @@ def run_sweep(args, out: Path) -> None:
         f"{LLM_WINDOW[1]} (thermostat outside), method `{method}`. Households: "
         + ", ".join(f"{hid} ({o}, {runner.archetype(hid)})" for hid, o in ORIENTATION_OF.items()),
         "",
-        "#### (a) flexible-layer (HVAC) elasticity by comfort orientation vs global_scale "
-        f"(graded factors {runner.cfg.archetype_factors})",
+        f"Graded archetype factors {runner.cfg.archetype_factors}. Elasticity is pooled "
+        "per group (sum kWh, then ratio); more negative = more elastic. Ordering flags need "
+        "strict separation end to end; NaN (no baseline HVAC in the window) -> False.",
+        "",
+        "#### (a1) flexible-layer (HVAC) elasticity vs global_scale",
         "",
         _md(a),
+        "",
+        "#### (a2) whole-household elasticity vs global_scale",
+        "",
+        _md(a_total),
         "",
         f"#### (b) decomposition at global_scale {best}: uniform (1.0/1.0/1.0) vs graded factors",
         "",

@@ -8,23 +8,23 @@
     "10444433": "comfort_flexible"
   },
   "scales": [
-    0.4,
-    0.6,
-    0.8,
+    0.3,
+    0.5,
+    0.7,
     1.0
   ],
-  "decomposition_scale_on_stub": 0.4,
+  "decomposition_scale_on_stub": 0.5,
   "llm_window": [
-    "12:00",
-    "22:00"
+    "14:00",
+    "21:00"
   ],
-  "prompted_decisions": 1200,
-  "distinct_prompts_on_stub_trajectories": 403,
-  "projected_live_calls": 402,
-  "projected_cache_hit_rate": 0.665,
-  "structural_upper_bound_live_calls": 750,
-  "projected_wall_minutes_at_rpm": 80.4,
-  "upper_bound_wall_minutes_at_rpm": 150.0,
+  "prompted_decisions": 840,
+  "distinct_prompts_on_stub_trajectories": 286,
+  "projected_live_calls": 285,
+  "projected_cache_hit_rate": 0.661,
+  "structural_upper_bound_live_calls": 528,
+  "projected_wall_minutes_at_rpm": 57.0,
+  "upper_bound_wall_minutes_at_rpm": 105.6,
   "rate_limit_rpm": 5,
   "note": "projection runs the dry-run stub; live trajectories differ (estimate)"
 }
