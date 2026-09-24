@@ -6,8 +6,11 @@
 # assignment (`config/persona_assignment.csv`) plus the report are rebuilt.
 # Nothing downstream hard-codes any of these values.
 #
-#   cost_sensitivity  -> energy burden  -> archetype A/B/C -> prompt `price_sensitivity`
-#   thermal_tolerance -> comfort band   -> HVAC tolerance  -> prompt `thermal_sensitivity`
+#   cost_sensitivity  -> energy burden  -> archetype A/B/C -> Python WTP factor
+#                        (experiment.yaml phase3.wtp_scaling.archetype_factors;
+#                        never shown to the LLM)
+#   thermal_tolerance -> comfort band + comfort orientation -> HVAC tolerance
+#                        (MILP + prompt state) and the prompt persona sentence
 #   schedule_profile  -> load-shape cluster -> washer release/deadline window
 
 # ---------------------------------------------------------------------------
@@ -54,8 +57,11 @@ cost_sensitivity:
   fixed_thresholds: [0.03, 0.06]
   archetype_labels: [A, B, C]            # low, medium, high burden
 
-  # Archetype -> the qualitative `price_sensitivity` descriptor rendered into
-  # the (price-blind) prompt persona line. A descriptor only -- never a number.
+  # Archetype -> a qualitative `price_sensitivity` label. Descriptive column
+  # only: since the Phase 3 mechanism correction it is NOT rendered into any
+  # prompt (price-sensitivity wording did not move the model). Cost
+  # sensitivity acts through the deterministic per-archetype WTP factor in
+  # experiment.yaml `phase3.wtp_scaling.archetype_factors` instead.
   price_sensitivity_by_archetype:
     A: low
     B: moderate
@@ -69,18 +75,28 @@ cost_sensitivity:
 
 # ---------------------------------------------------------------------------
 # thermal_tolerance -> HVAC comfort band (+/- degC around the setpoint)
+#                      + comfort orientation (the LLM-facing persona)
 # ---------------------------------------------------------------------------
 thermal_tolerance:
-  # Rules are checked in order; first match wins.
+  # Rules are checked in order; first match wins. Each rule sets both the
+  # numeric band (MILP constraint, and the state the prompt reports) and the
+  # comfort orientation, so the two are grounded in the same SGSC fields.
+  # Orientation -> persona sentence lives in agents/llm_agent.py
+  # (COMFORT_ORIENTATION_TEXT) next to the prompt it is rendered into.
   rules:
     - when: {has_children: "Y"}
       tolerance_band_c: 1.5
+      comfort_orientation: comfort_prioritising
     - when: {aircon: Ducted}
       tolerance_band_c: 1.5
+      comfort_orientation: comfort_prioritising
     - when: {aircon: SplitSystem}
       tolerance_band_c: 2.0
+      comfort_orientation: balanced
   default_tolerance_band_c: 2.5          # no aircon
-  # Band -> the qualitative `thermal_sensitivity` descriptor in the prompt.
+  default_comfort_orientation: comfort_flexible
+  # Band -> the qualitative `thermal_sensitivity` label (descriptive column;
+  # superseded in the prompt by comfort_orientation).
   thermal_sensitivity_by_band:
     "1.5": tight
     "2.0": moderate

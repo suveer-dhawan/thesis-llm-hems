@@ -143,6 +143,7 @@ def run_simulation(
     household_ctx = {
         "thermal_sensitivity": household.params.thermal_sensitivity,
         "price_sensitivity": household.params.price_sensitivity,
+        "comfort_orientation": household.params.comfort_orientation,
     }
 
     steps: list[StepLog] = []

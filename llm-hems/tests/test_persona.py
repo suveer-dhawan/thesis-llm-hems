@@ -75,7 +75,19 @@ def test_build_persona_table_burden_and_rules():
     assert t.loc[2, "schedule_profile"] == "night"
     assert t.loc[3, "schedule_profile"] == "evening"
     assert t.loc[1, "price_sensitivity"] == "high"
+    # comfort orientation comes from the same rule as the band
+    assert t.loc[1, "comfort_orientation"] == "comfort_prioritising"  # children
+    assert t.loc[2, "comfort_orientation"] == "balanced"  # split
+    assert t.loc[3, "comfort_orientation"] == "comfort_prioritising"  # ducted
     assert t.loc[1, "archetype_income_tier"] == "C"
+
+
+def test_no_aircon_no_children_is_comfort_flexible():
+    m = _manifest()
+    m.loc[0, "has_children"] = "N"
+    t = build_persona_table(m, pd.Series({1: 1.0, 2: 1.0, 3: 1.0}), 0.3, load_persona_config())
+    row = t.set_index("customer_ID").loc[1]
+    assert (row["tolerance_band_c"], row["comfort_orientation"]) == (2.5, "comfort_flexible")
 
 
 def test_unknown_income_tier_raises():
@@ -95,5 +107,6 @@ def test_committed_assignment_wires_into_simulator_params():
         WasherParams.from_yaml("config/appliances.yaml", "config/household.yaml"),
     )
     assert params.archetype == "C" and params.price_sensitivity == "high"
+    assert params.comfort_orientation == "balanced"
     assert hvac.tolerance_band_c == 2.0
     assert (washer.released_step, washer.deadline_step) == (32, 44)  # 16:00 -> 22:00

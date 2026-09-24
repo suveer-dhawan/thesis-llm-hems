@@ -466,7 +466,12 @@ def main() -> None:
     )
     parser.add_argument("--households", default=None, help="comma-separated customer_IDs")
     parser.add_argument("--steps", default=None, help=f"comma-separated subset of {ALL_STEPS}")
-    parser.add_argument("--scale", type=float, default=1.0, help="wtp_scale when not calibrating")
+    parser.add_argument(
+        "--scale",
+        type=float,
+        default=None,
+        help="global wtp_scale when not calibrating (default: phase3.wtp_scaling.global_scale)",
+    )
     parser.add_argument("--seed", type=int, default=None, help="seed for elasticity/overlay")
     parser.add_argument("--out", default=None)
     parser.add_argument(
@@ -541,7 +546,8 @@ def main() -> None:
         f"{(cfg.llm_cfg.get(cfg.llm_cfg.get('provider', ''), {}) or {}).get('model')}",
         "",
     ]
-    scale, eval_ids = args.scale, ids
+    scale = args.scale if args.scale is not None else cfg.global_scale
+    eval_ids = ids
     if "calibrate" in steps:
         scale, eval_ids = step_calibrate(runner, ids, out, report)
         if not eval_ids:

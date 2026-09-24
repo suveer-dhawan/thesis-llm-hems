@@ -75,10 +75,23 @@ python experiments/run_single.py --agent llm --dry-run  # no API spend
 committed `config/persona_assignment.csv`). The generic schema is instantiated
 from SGSC data:
 - `cost_sensitivity` = energy burden (annual kWh x time-weighted tariff rate /
-  income-tier midpoint), bucketed into terciles as archetype A/B/C.
+  income-tier midpoint), bucketed into terciles as archetype A/B/C. The LLM
+  never sees it. It acts in Python as a WTP factor:
+  `effective_WTP = LLM_WTP x global_scale x archetype_factor`, set in
+  `experiment.yaml` -> `phase3.wtp_scaling` (default A/B/C = 1.3/1.0/0.7).
 - `thermal_tolerance` = comfort band (children or ducted ±1.5, split ±2.0, no
-  aircon ±2.5).
+  aircon ±2.5), plus the matching **comfort orientation**
+  (`comfort_prioritising` / `balanced` / `comfort_flexible`). The orientation
+  is the only persona the LLM sees: one sentence in the HVAC prompt, with no
+  price, cost or money wording. The numeric band still sets the MILP
+  constraint and the state that the prompt reports.
 - `schedule_profile` = washer window by load-shape cluster.
+
+Why the split: price-sensitivity wording in the prompt did not change the
+LLM's WTP (live slice). Comfort wording did give ordered WTP at T=0 (probe
+v3). So the LLM carries the comfort valuation and Python applies cost
+sensitivity. `experiments/sweep_comfort_scale.py` is the cheap check of this
+(6 households, HVAC only): results are in `results/phase3/comfort_sweep/`.
 
 The report is `results/phase3/persona/persona_report.md`.
 

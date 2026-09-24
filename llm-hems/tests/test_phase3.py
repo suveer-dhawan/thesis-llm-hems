@@ -28,3 +28,15 @@ def test_dry_run_pair_is_memoised_and_spend_free():
     assert base.live_calls == cpp.live_calls == 0 and base.prompted > 0
     # identical base load on both days -- only the tariff differs
     assert base.result.base_load_curve() == cpp.result.base_load_curve()
+
+
+def test_wtp_factor_follows_archetype_config():
+    runner = Phase3Runner(Phase3Config.from_yaml(dry_run=True))
+    factors = runner.cfg.archetype_factors
+    assert factors == {"A": 1.3, "B": 1.0, "C": 0.7}
+    assert runner.wtp_factor(8596070) == factors["C"]
+    assert runner.wtp_factor(9911140) == factors["A"]
+    date = runner.cfg.dates[0]
+    run = runner.run_day(8596070, "llm", date, "base", seed=42, wtp_scale=2.0)
+    prompted = run.llm_log[~run.llm_log["forced"]]
+    assert (prompted["wtp_factor"] == 0.7).all() and (prompted["wtp_scale"] == 2.0).all()

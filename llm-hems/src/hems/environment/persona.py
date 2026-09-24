@@ -8,10 +8,11 @@ washer params that persona implies. Three schema axes:
   with `est_annual_cost = annual kWh x average tariff rate` (rate derived from
   `config/tariff.yaml`, not typed in). Burden is bucketed L/M/H (terciles by
   default, or fixed thresholds) -> archetype A (low burden) / B / C (high).
-  The archetype reaches the LLM only as the qualitative `price_sensitivity`
-  descriptor in the prompt's persona line -- the prompt stays price-blind.
+  The archetype never reaches the LLM: it acts in Python as a per-household
+  WTP factor (`phase3.wtp_scaling.archetype_factors` in experiment.yaml).
 - **thermal_tolerance** -> HVAC comfort band (ordered rules on children /
-  aircon type) -> `tolerance_band_c` + the `thermal_sensitivity` descriptor.
+  aircon type) -> `tolerance_band_c` (MILP constraint + prompt state) and
+  `comfort_orientation` (the LLM-facing persona sentence).
 - **schedule_profile** -> washer release/deadline window, from the SGSC
   load-shape cluster.
 
@@ -109,12 +110,23 @@ def bucket_burden(
 # --------------------------------------------------------------------------
 
 
-def thermal_band(row: pd.Series, cfg: dict) -> float:
-    """First matching rule's band; `default_tolerance_band_c` if none match."""
+def _thermal_rule(row: pd.Series, cfg: dict) -> dict | None:
     for rule in cfg["rules"]:
         if all(str(row.get(k)) == str(v) for k, v in rule["when"].items()):
-            return float(rule["tolerance_band_c"])
-    return float(cfg["default_tolerance_band_c"])
+            return rule
+    return None
+
+
+def thermal_band(row: pd.Series, cfg: dict) -> float:
+    """First matching rule's band; `default_tolerance_band_c` if none match."""
+    rule = _thermal_rule(row, cfg)
+    return float(rule["tolerance_band_c"] if rule else cfg["default_tolerance_band_c"])
+
+
+def comfort_orientation(row: pd.Series, cfg: dict) -> str:
+    """First matching rule's orientation; `default_comfort_orientation` if none match."""
+    rule = _thermal_rule(row, cfg)
+    return str(rule["comfort_orientation"] if rule else cfg["default_comfort_orientation"])
 
 
 def thermal_descriptor(band_c: float, cfg: dict) -> str:
@@ -179,6 +191,7 @@ def build_persona_table(
 
     df["tolerance_band_c"] = df.apply(lambda r: thermal_band(r, tt), axis=1)
     df["thermal_sensitivity"] = df["tolerance_band_c"].map(lambda b: thermal_descriptor(b, tt))
+    df["comfort_orientation"] = df.apply(lambda r: comfort_orientation(r, tt), axis=1)
 
     df["schedule_profile"] = df["cluster"].map(lambda c: schedule_profile(c, sp))
     df["washer_release"] = df["schedule_profile"].map(lambda p: sp["profiles"][p]["washer_release"])
@@ -203,6 +216,7 @@ ASSIGNMENT_COLUMNS = [
     "price_sensitivity",
     "tolerance_band_c",
     "thermal_sensitivity",
+    "comfort_orientation",
     "schedule_profile",
     "washer_release",
     "washer_deadline",
@@ -233,6 +247,7 @@ def persona_household_params(household_id: int, assignment: pd.DataFrame) -> Hou
         archetype=str(r["archetype"]),
         tolerance_band_c=float(r["tolerance_band_c"]),
         washer_release=str(r["washer_release"]),
+        comfort_orientation=str(r["comfort_orientation"]),
     )
 
 

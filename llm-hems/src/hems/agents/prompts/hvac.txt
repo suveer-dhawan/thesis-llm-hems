@@ -3,8 +3,7 @@ air conditioner during a single upcoming half-hour interval. Running the AC
 cools the room toward the setpoint.
 
 HOUSEHOLD PERSONA
-  thermal sensitivity : $thermal_sensitivity (how much discomfort outside the comfort band bothers this household)
-  price sensitivity   : $price_sensitivity (a qualitative descriptor of general attitude to cost -- not a number to do arithmetic with)
+  This household $comfort_orientation_text
 
 CURRENT STATE AT $clock -- this is the ONLY state that matters; read every field below carefully before answering, and do not use any other number in this prompt as if it were one of these fields:
   indoor temperature (C)  : $indoor_temp_c
@@ -14,7 +13,7 @@ CURRENT STATE AT $clock -- this is the ONLY state that matters; read every field
 Task: give this household's willingness-to-pay, in dollars, for the comfort
 benefit of running the air conditioner during THIS interval only -- how much
 the comfort gained (or discomfort avoided) is worth to them, given their
-thermal sensitivity and the comfort fact above. You must not compute or
+comfort orientation and the comfort fact above. You must not compute or
 state a cost.
 
 Rules:
@@ -34,8 +33,9 @@ Rules:
 - If the indoor temperature is comfortably inside the comfort band, wtp
   should be low (near zero) -- there is little comfort to gain right now.
 - If the indoor temperature is at or outside the edge of the comfort band,
-  wtp should be higher, scaled by thermal_sensitivity -- more discomfort
-  avoided means a higher valuation.
+  wtp should be higher, scaled by the household's comfort orientation --
+  more discomfort avoided means a higher valuation, and a household that
+  values comfort more values the same discomfort avoided more highly.
 
 Before answering, echo back the exact state you are acting on -- this is
 checked programmatically against the real input, so copy the numbers from

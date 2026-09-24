@@ -15,13 +15,22 @@ tests also assert the price/CPP fields are absent from the rendered prompt.
 from __future__ import annotations
 
 from hems.agents.base import DecisionContext
-from hems.agents.llm_agent import LLMAgent
+import pytest
+
+from hems.agents.llm_agent import COMFORT_ORIENTATION_TEXT, LLMAgent
 from hems.llm.schemas import HVACWTPResponse, WasherWTPResponse
 
-HOUSEHOLD = {"thermal_sensitivity": "moderate", "price_sensitivity": "moderate"}
+HOUSEHOLD = {
+    "thermal_sensitivity": "moderate",
+    "price_sensitivity": "moderate",
+    "comfort_orientation": "balanced",
+}
+
+# Words that would leak price / cost / money framing into the persona line.
+_MONEY_WORDS = ("price", "cost", "money", "cheap", "expensive", "bill", "$")
 
 
-def _hvac_ctx(indoor_temp_c=27.0, is_cpp=False, rate=0.55):
+def _hvac_ctx(indoor_temp_c=27.0, is_cpp=False, rate=0.55, household=None):
     return DecisionContext(
         t=30,
         clock="15:00",
@@ -37,7 +46,7 @@ def _hvac_ctx(indoor_temp_c=27.0, is_cpp=False, rate=0.55):
         cost_now=2.0 * 0.5 * rate,
         rate=rate,
         is_cpp=is_cpp,
-        household=HOUSEHOLD,
+        household=household or HOUSEHOLD,
     )
 
 
@@ -92,7 +101,24 @@ def test_hvac_prompt_is_price_blind():
     assert "1.20" not in prompt
     assert "1.2" not in prompt
     assert "CPP" not in prompt
-    assert "price sensitivity" in prompt.lower()  # persona line only, no rate/CPP data
+    assert "price sensitivity" not in prompt.lower()  # cost sensitivity is applied in Python
+
+
+@pytest.mark.parametrize("orientation", sorted(COMFORT_ORIENTATION_TEXT))
+def test_hvac_prompt_renders_comfort_orientation_without_money_wording(orientation):
+    ctx = _hvac_ctx(household={**HOUSEHOLD, "comfort_orientation": orientation})
+    prompt = LLMAgent(dry_run=True)._build_hvac_prompt(ctx)
+    text = COMFORT_ORIENTATION_TEXT[orientation]
+    assert f"This household {text}" in prompt
+    assert not any(w in text.lower() for w in _MONEY_WORDS)
+    # the numeric band the MILP uses is still stated in the prompt's state block
+    assert "22.0 to 26.0" in prompt
+
+
+def test_hvac_prompt_rejects_unknown_orientation():
+    ctx = _hvac_ctx(household={**HOUSEHOLD, "comfort_orientation": "stoic"})
+    with pytest.raises(ValueError):
+        LLMAgent(dry_run=True)._build_hvac_prompt(ctx)
 
 
 def test_washer_prompt_is_price_blind_and_states_slack():
@@ -104,6 +130,7 @@ def test_washer_prompt_is_price_blind_and_states_slack():
     prompt = agent._build_washer_prompt(ctx)
     assert "1.20" not in prompt
     assert "CPP" not in prompt
+    assert "price sensitivity" not in prompt.lower()
     assert "buffer before deadline" in prompt
     assert "0 half-hour steps of slack" in prompt
 
@@ -170,6 +197,17 @@ def test_wtp_scale_multiplies_wtp_in_halt_rule():
     ctx = _hvac_ctx(indoor_temp_c=26.2, rate=0.55)  # stub wtp = 0.8 * 0.7 = 0.56 vs cost 0.55
     assert LLMAgent(dry_run=True, wtp_scale=1.0).decide(ctx).run
     assert not LLMAgent(dry_run=True, wtp_scale=0.5).decide(ctx).run
+
+
+def test_wtp_factor_composes_with_wtp_scale():
+    ctx = _hvac_ctx(indoor_temp_c=26.2, rate=0.55)  # stub wtp 0.56 vs cost 0.55
+    assert not LLMAgent(dry_run=True, wtp_scale=1.0, wtp_factor=0.7).decide(ctx).run
+    assert LLMAgent(dry_run=True, wtp_scale=0.8, wtp_factor=1.3).decide(ctx).run  # 1.04x
+    agent = LLMAgent(dry_run=True, wtp_scale=2.0, wtp_factor=0.7)
+    agent.decide(ctx)
+    e = agent.log[-1]
+    assert e.utility == pytest.approx(2.0 * 0.7 * e.wtp - e.cost_now)
+    assert (e.wtp_scale, e.wtp_factor) == (2.0, 0.7)
 
 
 def test_washer_forced_states_skip_the_prompt():

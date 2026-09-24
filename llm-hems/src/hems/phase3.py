@@ -85,6 +85,15 @@ class Phase3Config:
     def fit_seed(self) -> int:
         return int(self.calibration["fit_seed"])
 
+    @property
+    def global_scale(self) -> float:
+        return float(self.raw.get("wtp_scaling", {}).get("global_scale", 1.0))
+
+    @property
+    def archetype_factors(self) -> dict[str, float]:
+        factors = self.raw.get("wtp_scaling", {}).get("archetype_factors", {})
+        return {str(k): float(v) for k, v in factors.items()}
+
 
 @dataclass
 class DayRun:
@@ -119,6 +128,10 @@ class Phase3Runner:
         return str(
             self.assignment.loc[self.assignment["customer_ID"] == household_id, "archetype"].iloc[0]
         )
+
+    def wtp_factor(self, household_id: int) -> float:
+        """The household's deterministic cost-sensitivity WTP factor (1.0 if unset)."""
+        return self.cfg.archetype_factors.get(self.archetype(household_id), 1.0)
 
     def env(self, household_id: int) -> tuple[Household, HVACParams, WasherParams]:
         if household_id not in self._envs:
@@ -200,10 +213,11 @@ class Phase3Runner:
             # noisy_milp_agent.py), so they drive its own accounting too.
             hvac, washer = agent.jittered_hvac_params, agent.jittered_washer_params
         elif agent_name == "llm":
+            factor = self.wtp_factor(household_id)
             agent = (
-                LLMAgent(dry_run=True, wtp_scale=wtp_scale)
+                LLMAgent(dry_run=True, wtp_scale=wtp_scale, wtp_factor=factor)
                 if self.cfg.dry_run
-                else LLMAgent(client=self.client(seed), wtp_scale=wtp_scale)
+                else LLMAgent(client=self.client(seed), wtp_scale=wtp_scale, wtp_factor=factor)
             )
         else:
             raise ValueError(f"unknown agent '{agent_name}' -- choose from {AGENTS}")

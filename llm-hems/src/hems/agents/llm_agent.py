@@ -7,9 +7,18 @@ of the LLM. The prompt is deliberately **price-blind**: it never states the
 electricity rate or a CPP flag (see `agents/prompts/*.txt`), so the WTP
 reflects comfort/urgency valuation alone. Python still owns `ctx.rate` /
 `ctx.is_cpp` / `ctx.cost_now` for accounting -- it computes `U = wtp_scale *
-wtp - cost_now` and applies the deterministic halt rule: run iff `U >= 0`.
-`wtp_scale` is the single global factor Phase 3 fits on the calibration
-subset (`experiments/calibrate.py`) and then freezes; it defaults to 1.0.
+wtp_factor * wtp - cost_now` and applies the deterministic halt rule: run iff
+`U >= 0`. `wtp_scale` is the single global factor Phase 3 fits on the
+calibration subset (`experiments/calibrate.py`) and then freezes;
+`wtp_factor` is the household's deterministic cost-sensitivity factor (its
+burden archetype's `phase3.wtp_scaling.archetype_factors` entry). Both
+default to 1.0.
+
+The only persona the model sees is the household's *comfort orientation*
+(`COMFORT_ORIENTATION_TEXT`), in the HVAC prompt: price-sensitivity wording
+did not move the model's WTP (Phase 3 live slice), while comfort wording
+produced ordered WTP at T=0 (probe v3), so the LLM carries the comfort
+valuation and cost sensitivity is applied in Python.
 
 Washer steps where Python already fixes the outcome -- before the release
 step, mid-cycle (non-interruptible), or after completion -- are decided
@@ -44,6 +53,20 @@ PROMPTS_DIR = Path(__file__).parent / "prompts"
 
 _ECHO_TOLERANCE_C = 0.15  # float round-trip / formatting slack, not a real "close enough"
 
+# The LLM-facing persona sentence ("This household ..."), keyed by the
+# `comfort_orientation` the persona rules assign (config/persona.yaml).
+# Deliberately free of price / cost / money wording.
+COMFORT_ORIENTATION_TEXT = {
+    "comfort_prioritising": (
+        "strongly values keeping the home comfortable and dislikes any deviation "
+        "from the setpoint."
+    ),
+    "balanced": "has a moderate preference for comfort.",
+    "comfort_flexible": (
+        "is relaxed about temperature and readily tolerates the room drifting from the setpoint."
+    ),
+}
+
 
 def _load_template(name: str) -> string.Template:
     return string.Template((PROMPTS_DIR / name).read_text())
@@ -59,7 +82,7 @@ class LLMDecisionLogEntry:
     clock: str
     appliance: str
     prompt: str
-    wtp: float  # raw model output, before wtp_scale
+    wtp: float  # raw model output, before wtp_scale / wtp_factor
     reason: str
     cost_now: float
     utility: float
@@ -67,6 +90,7 @@ class LLMDecisionLogEntry:
     cached: bool
     forced: bool
     wtp_scale: float
+    wtp_factor: float
     dry_run: bool
     provider: str
     model_id: str
@@ -91,10 +115,12 @@ class LLMAgent:
         dry_run: bool = False,
         cache_path: str | Path | None = None,
         wtp_scale: float = 1.0,
+        wtp_factor: float = 1.0,
     ):
         self._dry_run = dry_run
         self._client = None if dry_run else (client or LLMClient(provider=provider, cache_path=cache_path))
         self.wtp_scale = float(wtp_scale)
+        self.wtp_factor = float(wtp_factor)
         self.log: list[LLMDecisionLogEntry] = []
 
     @property
@@ -129,7 +155,7 @@ class LLMAgent:
         else:
             wtp_response, cached = self._client.complete_json(prompt, schema)
 
-        utility = self.wtp_scale * wtp_response.wtp - ctx.cost_now
+        utility = self.wtp_scale * self.wtp_factor * wtp_response.wtp - ctx.cost_now
         run = utility >= 0
         misreads = self._detect_misreads(appliance_type, ctx, wtp_response)
 
@@ -147,6 +173,7 @@ class LLMAgent:
                 cached=cached,
                 forced=False,
                 wtp_scale=self.wtp_scale,
+                wtp_factor=self.wtp_factor,
                 dry_run=self._dry_run,
                 provider=self.provider,
                 model_id=self.model_id,
@@ -184,6 +211,7 @@ class LLMAgent:
                 cached=False,
                 forced=True,
                 wtp_scale=self.wtp_scale,
+                wtp_factor=self.wtp_factor,
                 dry_run=self._dry_run,
                 provider=self.provider,
                 model_id=self.model_id,
@@ -256,9 +284,11 @@ class LLMAgent:
                 f"indoor is {indoor:.1f}C; comfort band is {band_lo:.1f}-{band_hi:.1f}C; "
                 f"you are WITHIN the band (no violation)"
             )
+        orientation = ctx.household.get("comfort_orientation", "balanced")
+        if orientation not in COMFORT_ORIENTATION_TEXT:
+            raise ValueError(f"unknown comfort_orientation '{orientation}'")
         return _HVAC_TEMPLATE.substitute(
-            thermal_sensitivity=ctx.household.get("thermal_sensitivity", "moderate"),
-            price_sensitivity=ctx.household.get("price_sensitivity", "moderate"),
+            comfort_orientation_text=COMFORT_ORIENTATION_TEXT[orientation],
             clock=ctx.clock,
             indoor_temp_c=f"{indoor:.1f}",
             band_lo_c=f"{band_lo:.1f}",
@@ -271,7 +301,6 @@ class LLMAgent:
         steps_remaining = a["duration_steps"] - a["steps_completed"]
         steps_until_deadline = a["deadline_step"] - ctx.t
         return _SHIFTABLE_TEMPLATE.substitute(
-            price_sensitivity=ctx.household.get("price_sensitivity", "moderate"),
             clock=ctx.clock,
             steps_completed=a["steps_completed"],
             duration_steps=a["duration_steps"],
@@ -284,10 +313,11 @@ class LLMAgent:
 
     # -- dry run --------------------------------------------------------
 
-    # Dry-run stub: persona price_sensitivity -> WTP multiplier, so archetypes
-    # differ and the Phase 3 pipeline (calibration, per-archetype tables) has
-    # something non-degenerate to chew on. Not a behavioural claim.
-    _STUB_SENSITIVITY_MULT = {"low": 1.5, "moderate": 1.0, "high": 0.6}
+    # Dry-run stub: comfort orientation -> WTP multiplier, so comfort groups
+    # differ and the Phase 3 pipeline has something non-degenerate to chew
+    # on (archetypes differ via wtp_factor, applied outside the stub). Not a
+    # behavioural claim.
+    _STUB_ORIENTATION_MULT = {"comfort_prioritising": 1.5, "balanced": 1.0, "comfort_flexible": 0.6}
 
     def _dry_run_response(self, ctx: DecisionContext, schema):
         """Deterministic stand-in for `--dry-run`: no API call, no spend.
@@ -297,7 +327,7 @@ class LLMAgent:
         WTP behaviour. Echoes the true input values by construction.
         """
         a = ctx.appliance
-        mult = self._STUB_SENSITIVITY_MULT.get(ctx.household.get("price_sensitivity"), 1.0)
+        mult = self._STUB_ORIENTATION_MULT.get(ctx.household.get("comfort_orientation"), 1.0)
         if a["type"] == "hvac":
             over_ceiling = a["indoor_temp_c"] - (a["setpoint_c"] + a["tolerance_band_c"])
             wtp = mult * 0.8 * max(0.0, over_ceiling + 0.5)

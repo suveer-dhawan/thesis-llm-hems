@@ -44,6 +44,9 @@ class HouseholdParams:
     archetype: str | None = None
     tolerance_band_c: float | None = None
     washer_release: str | None = None  # "HH:MM"
+    # The LLM-facing persona (comfort_prioritising | balanced | comfort_flexible,
+    # see agents/llm_agent.py COMFORT_ORIENTATION_TEXT).
+    comfort_orientation: str = "balanced"
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> "HouseholdParams":
@@ -56,6 +59,7 @@ class HouseholdParams:
             deadline=cfg["deadline"],
             occupied_hours_start=cfg["occupied_hours"]["start"],
             occupied_hours_end=cfg["occupied_hours"]["end"],
+            comfort_orientation=cfg.get("comfort_orientation", "balanced"),
         )
 
 

@@ -9,7 +9,11 @@ thermal_sensitivity: moderate   # CONFIRM: placeholder -- qualitative: tight | m
                                   #   (drives HVAC comfort-band width)
 
 price_sensitivity: moderate     # CONFIRM: placeholder -- qualitative descriptor only,
-                                  #   NOT a number the LLM does math on (§8)
+                                  #   NOT a number the LLM does math on (§8); no longer
+                                  #   rendered into prompts (Phase 3 mechanism correction)
+
+comfort_orientation: balanced   # LLM-facing persona: comfort_prioritising | balanced |
+                                  #   comfort_flexible (8596070: split aircon, no children)
 
 deadline: "21:00"                # CONFIRM: placeholder -- shiftable load must finish by this time
 

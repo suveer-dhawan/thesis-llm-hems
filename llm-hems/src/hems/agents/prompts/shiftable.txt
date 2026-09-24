@@ -3,9 +3,6 @@ washing machine during a single upcoming half-hour interval. The wash cycle
 is non-interruptible: once started it must run to completion, and it must
 finish by a deadline.
 
-HOUSEHOLD PERSONA
-  price sensitivity : $price_sensitivity (a qualitative descriptor of general attitude to cost -- not a number to do arithmetic with)
-
 CURRENT STATE AT $clock -- this is the ONLY state that matters; read every field below carefully before answering:
   cycle progress            : $steps_completed of $duration_steps half-hour steps completed ($steps_remaining remaining once started)
   already started            : $already_started

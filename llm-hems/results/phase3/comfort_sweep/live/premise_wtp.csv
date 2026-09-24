@@ -1,0 +1,10 @@
+band_mode,comfort_orientation,band,indoor_c,over_ceiling_c,wtp,cached,misreads,reason,state
+common,comfort_prioritising,22.0-26.0,24.0,-2.0,0.1,False,,"The indoor temperature is currently inside the comfort band, resulting in low willingness-to-pay.",comfortable
+common,comfort_prioritising,22.0-26.0,26.5,0.5,1.5,False,,"The indoor temperature is 0.5C over the ceiling of the comfort band, and the household strongly values comfort and dislikes deviation.",mild
+common,comfort_prioritising,22.0-26.0,28.0,2.0,2.5,False,,"The indoor temperature is 2.0C over the comfort ceiling, and this household strongly dislikes deviation and values comfort highly.",contested
+common,balanced,22.0-26.0,24.0,-2.0,0.05,False,,"The indoor temperature is comfortably within the band, so the willingness-to-pay for running the AC is very low.",comfortable
+common,balanced,22.0-26.0,26.5,0.5,0.45,True,,"The indoor temperature is 0.5C above the comfort band ceiling, and with moderate preference for comfort, the household has a moderate willingness-to-pay to avoid this discomfort.",mild
+common,balanced,22.0-26.0,28.0,2.0,1.5,True,,"The indoor temperature is 2.0C over the comfort ceiling, causing noticeable discomfort to this moderately comfort-oriented household, leading to a moderate willingness to pay for cooling.",contested
+common,comfort_flexible,22.0-26.0,24.0,-2.0,0.05,False,,"The indoor temperature is comfortably within the band, so willingness to pay is near zero.",comfortable
+common,comfort_flexible,22.0-26.0,26.5,0.5,0.45,True,,"The household is slightly over the comfort band ceiling by 0.5C and relaxed about temperature, leading to a moderate willingness-to-pay.",mild
+common,comfort_flexible,22.0-26.0,28.0,2.0,0.5,False,,"The indoor temperature is 2.0C over the comfort ceiling, but the household is relaxed about temperature and tolerates drift well.",contested
