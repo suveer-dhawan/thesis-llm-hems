@@ -1,0 +1,14 @@
+{
+  "commit": "484b916550efabea40f863dd26aca0a07010992f",
+  "dirty": false,
+  "dirty_files": null,
+  "branch": "phase3-elasticity-harness",
+  "timestamp_utc": "2026-09-26T11:02:51+00:00",
+  "argv": [
+    "experiments/run_phase3.py",
+    "--dry-run",
+    "--out",
+    "results/phase3/dryrun_final"
+  ],
+  "python": "3.12.4"
+}
