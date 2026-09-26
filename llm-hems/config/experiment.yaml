@@ -86,6 +86,25 @@ noisy_milp:
   # relative to clean MILP across seeds on household 8596070 (Part 1b).
   price_noise_std: 0.02
 
+rule_based:
+  # RuleBasedSatisficerAgent (agents/rule_based_agent.py): the LLM agent with
+  # the LLM swapped for a formula, same Python halt (U = wtp - cost_now at
+  # global_scale 1.0, factor 1.0 in experiments/run_rule_based.py).
+  #   HVAC   WTP = hvac_k[comfort_orientation] * max(0, T_in - band_ceiling)
+  #   washer WTP = washer_w_max * clamp(1 - slack / slack_at_release, 0, 1)
+  # LEVEL-MATCHED, not free: least squares through the origin of raw LLM WTP
+  # on each regressor, one row per distinct prompt -- experiments/fit_rule_based.py
+  # -> results/phase3/rule_based/fit.json (values below = that output, 3 dp).
+  # hvac_k: live comfort sweep log (results/phase3/comfort_sweep/live/).
+  # washer_w_max: live slice log (results/phase3/live_slice/) -- the comfort
+  # sweep never started the washer; the slice is the only live washer WTP
+  # (13 distinct prompts, 2 households), so w_max is the weaker of the fits.
+  hvac_k:                          # $ per degC over the band ceiling
+    comfort_prioritising: 2.712
+    balanced: 0.620
+    comfort_flexible: 0.511
+  washer_w_max: 0.888              # $ at zero slack
+
 results_dir: results             # timestamped run folders written here (gitignored)
 
 # ---------------------------------------------------------------------------

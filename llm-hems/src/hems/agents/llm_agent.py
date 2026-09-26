@@ -68,6 +68,30 @@ COMFORT_ORIENTATION_TEXT = {
 }
 
 
+def satisficing_halt(
+    wtp: float, cost_now: float, wtp_scale: float = 1.0, wtp_factor: float = 1.0
+) -> tuple[float, bool]:
+    """The deterministic halt rule: `U = wtp_scale * wtp_factor * wtp - cost_now`, run iff `U >= 0`.
+
+    Shared by every WTP-emitting agent (LLM, rule-based satisficer) so they
+    differ only in where the WTP comes from.
+    """
+    utility = wtp_scale * wtp_factor * wtp - cost_now
+    return utility, utility >= 0
+
+
+def forced_washer_outcome(ctx: DecisionContext) -> tuple[bool, str] | None:
+    """`(run, reason)` when Python fixes the washer outcome regardless of the agent, else None."""
+    a = ctx.appliance
+    if a["steps_completed"] >= a["duration_steps"]:
+        return False, "forced: cycle already complete"
+    if a["steps_completed"] > 0:
+        return True, "forced: non-interruptible cycle in progress"
+    if ctx.t < a["released_step"]:
+        return False, "forced: before release step"
+    return None
+
+
 def _load_template(name: str) -> string.Template:
     return string.Template((PROMPTS_DIR / name).read_text())
 
@@ -155,8 +179,9 @@ class LLMAgent:
         else:
             wtp_response, cached = self._client.complete_json(prompt, schema)
 
-        utility = self.wtp_scale * self.wtp_factor * wtp_response.wtp - ctx.cost_now
-        run = utility >= 0
+        utility, run = satisficing_halt(
+            wtp_response.wtp, ctx.cost_now, self.wtp_scale, self.wtp_factor
+        )
         misreads = self._detect_misreads(appliance_type, ctx, wtp_response)
 
         self.log.append(
@@ -188,15 +213,10 @@ class LLMAgent:
 
     def _forced_washer_decision(self, ctx: DecisionContext) -> Decision | None:
         """The washer outcome when Python fixes it regardless of the agent, else None."""
-        a = ctx.appliance
-        if a["steps_completed"] >= a["duration_steps"]:
-            run, reason = False, "forced: cycle already complete"
-        elif a["steps_completed"] > 0:
-            run, reason = True, "forced: non-interruptible cycle in progress"
-        elif ctx.t < a["released_step"]:
-            run, reason = False, "forced: before release step"
-        else:
+        forced = forced_washer_outcome(ctx)
+        if forced is None:
             return None
+        run, reason = forced
         self.log.append(
             LLMDecisionLogEntry(
                 t=ctx.t,

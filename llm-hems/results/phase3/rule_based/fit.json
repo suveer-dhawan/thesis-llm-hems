@@ -1,0 +1,50 @@
+{
+  "method": "least squares through the origin, raw LLM WTP on the rule regressor, one row per distinct prompt",
+  "hvac": {
+    "source": "results/phase3/comfort_sweep/live/sweep_llm_log.parquet",
+    "by_orientation": {
+      "balanced": {
+        "k": 0.619575,
+        "n_distinct_prompts": 81,
+        "rmse": 0.6607,
+        "r2_vs_mean": 0.2354,
+        "mean_llm_wtp_at_zero_regressor": 0.0462
+      },
+      "comfort_flexible": {
+        "k": 0.510511,
+        "n_distinct_prompts": 63,
+        "rmse": 0.4465,
+        "r2_vs_mean": 0.4283,
+        "mean_llm_wtp_at_zero_regressor": 0.05
+      },
+      "comfort_prioritising": {
+        "k": 2.711714,
+        "n_distinct_prompts": 51,
+        "rmse": 2.2389,
+        "r2_vs_mean": 0.3703,
+        "mean_llm_wtp_at_zero_regressor": 0.1833
+      }
+    }
+  },
+  "washer": {
+    "source": "results/phase3/live_slice/llm_decision_log.parquet",
+    "w_max": 0.888073,
+    "households": [
+      8596070,
+      9911140
+    ],
+    "n_distinct_prompts": 13,
+    "rmse": 0.5478,
+    "r2_vs_mean": 0.2759,
+    "mean_llm_wtp_at_zero_regressor": 0.1
+  },
+  "frozen_in_config": {
+    "hvac_k": {
+      "comfort_prioritising": 2.712,
+      "balanced": 0.62,
+      "comfort_flexible": 0.511
+    },
+    "washer_w_max": 0.888
+  },
+  "config_matches_fit_to_3dp": true
+}

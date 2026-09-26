@@ -95,6 +95,16 @@ sensitivity. `experiments/sweep_comfort_scale.py` is the cheap check of this
 
 The report is `results/phase3/persona/persona_report.md`.
 
+**Rule-based satisficer (no-LLM control).** `agents/rule_based_agent.py`
+swaps the LLM for a formula and keeps the same Python halt: HVAC
+`WTP = k[orientation] x max(0, T_in - ceiling)`, washer
+`WTP = w_max x (1 - slack / slack_at_release)`. `k` and `w_max` are fitted to
+the LLM's raw WTP by least squares through the origin
+(`experiments/fit_rule_based.py`) and frozen in `experiment.yaml` ->
+`rule_based:`. `experiments/run_rule_based.py` runs MILP, noisy-MILP and the
+rule on all 24 households with persona bands and with fixed ±2.0 bands. It
+makes zero API calls. Output is in `results/phase3/rule_based/`.
+
 **Harness** (`src/hems/phase3.py`, `experiments/run_phase3.py`,
 `experiments/calibrate.py`, all settings in `experiment.yaml` -> `phase3:`).
 Each date is simulated twice, once with no CPP and once with one CPP event.
