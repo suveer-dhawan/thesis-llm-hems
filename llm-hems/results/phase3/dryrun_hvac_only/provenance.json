@@ -1,0 +1,20 @@
+{
+  "commit": "08bd170e91f69a2fc5a74f4c7dbab0a4ad3610fa",
+  "dirty": true,
+  "dirty_files": [
+    "llm-hems/config/experiment.yaml",
+    "llm-hems/experiments/run_phase3.py",
+    "llm-hems/src/hems/phase3.py",
+    "llm-hems/tests/test_phase3.py",
+    "llm-hems/tests/test_thermal_heterogeneity.py"
+  ],
+  "branch": "phase3-elasticity-harness",
+  "timestamp_utc": "2026-09-26T11:47:25+00:00",
+  "argv": [
+    "experiments/run_phase3.py",
+    "--dry-run",
+    "--out",
+    "results/phase3/dryrun_hvac_only"
+  ],
+  "python": "3.12.4"
+}

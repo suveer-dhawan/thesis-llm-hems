@@ -1,0 +1,181 @@
+phase3:
+  persona_assignment: config/persona_assignment.csv
+  dates:
+  - '2013-01-18'
+  cpp:
+    start: '17:00'
+    end: '20:00'
+    severity: moderate
+  rebound_hours: 2
+  elasticity_method: base
+  washer_enabled: false
+  band_mode: fixed
+  fixed_band_c: 2.0
+  wtp_scaling:
+    global_scale: 1.0
+    archetype_factors:
+      A: 1.3
+      B: 1.0
+      C: 0.7
+  llm_seeds:
+  - 42
+  noisy_milp_seeds:
+  - 42
+  - 43
+  - 44
+  conway_range:
+  - -0.47
+  - -0.026
+  llm_cache_path: results/phase3/llm_cache_final.jsonl
+  calibration:
+    enabled: false
+    fraction: 0.5
+    split_seed: 42
+    fit_seed: 42
+    target_elasticity: -0.25
+    scale_grid:
+    - 0.25
+    - 0.5
+    - 1.0
+    - 2.0
+    - 4.0
+  scenario:
+    spike:
+      start: '18:00'
+      end: '19:00'
+      severity: severe
+    variants:
+      slack_remains:
+        washer_release: '17:30'
+        washer_deadline: '21:30'
+      deadline_forces:
+        washer_release: '17:30'
+        washer_deadline: '20:00'
+  live_slice:
+    households:
+    - 8596070
+    - 9911140
+    seed: 42
+    max_live_households: 3
+band:
+  mode: fixed
+  fixed_band_c: 2.0
+seeds:
+  primary: 42
+  llm:
+  - 42
+  noisy_milp:
+  - 42
+  - 43
+  - 44
+  deterministic_agents:
+  - milp
+  - rule_based
+wtp_scaling:
+  global_scale: 1.0
+  archetype_factors:
+    A: 1.3
+    B: 1.0
+    C: 0.7
+  applies_to:
+  - rule_based
+  - llm
+  calibration_enabled: false
+washer_enabled: false
+thermal_heterogeneity:
+  enabled: true
+  r_range:
+  - 0.8
+  - 1.2
+  c_range:
+  - 0.8
+  - 1.2
+  t0_range:
+  - -1.0
+  - 1.0
+  seed: 42
+rule_based:
+  hvac_k:
+    comfort_prioritising: 2.712
+    balanced: 0.62
+    comfort_flexible: 0.511
+  hvac_k_fixed_band:
+    comfort_prioritising: 3.791
+    balanced: 0.62
+    comfort_flexible: 0.66
+  washer_w_max: 0.888
+  band_mode_used: fixed
+  hvac_k_used:
+    comfort_prioritising: 3.791
+    balanced: 0.62
+    comfort_flexible: 0.66
+  washer_w_max_used: 0.888
+noisy_milp:
+  comfort_band_jitter_c: 0.5
+  setpoint_jitter_c: 0.5
+  deadline_jitter_steps: 1
+  price_noise_std: 0.02
+llm:
+  provider: gemini
+  temperature: 0.0
+  seed: 42
+  max_retries: 2
+  backoff:
+    base_s: 1.0
+    max_s: 8.0
+    rate_limited_min_s: 20.0
+  matilda:
+    base_url: https://matilda.maincode.com/api
+    timeout_s: 60.0
+    sdk_version: matilda-client==0.3.0
+    confirmed_date: '2026-09-06'
+    model: null
+    temperature: null
+    seed: null
+  gemini:
+    model: gemini-3.5-flash-lite
+    sdk_version: null
+    rate_limit_rpm: 1000
+    max_output_tokens: 2048
+  dry_run: false
+  cache_path: results/llm_cache.json
+agents:
+- milp
+- noisy_milp
+- rule_based
+- llm
+dry_run: true
+experiment_path: config/experiment.yaml
+run:
+  households:
+  - 8201999
+  - 8208263
+  - 8211127
+  - 8395524
+  - 8456189
+  - 8463253
+  - 8481835
+  - 8568499
+  - 8596070
+  - 8619039
+  - 8632083
+  - 8638181
+  - 9012382
+  - 9911140
+  - 9911204
+  - 9911250
+  - 9911254
+  - 10042536
+  - 10239118
+  - 10278838
+  - 10444433
+  - 10556929
+  - 10649333
+  - 11105177
+  steps:
+  - elasticity
+  - overlay
+  - seeds
+  out: results/phase3/dryrun_hvac_only
+  cache_paths:
+  - results/phase3/llm_cache_final.jsonl

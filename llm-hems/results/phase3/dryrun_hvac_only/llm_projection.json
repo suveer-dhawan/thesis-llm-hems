@@ -1,0 +1,17 @@
+{
+  "prompted_decisions": 2304,
+  "prompted_by_appliance": {
+    "hvac": 2304
+  },
+  "distinct_cache_keys": 1016,
+  "already_in_cache": 123,
+  "cache_paths_checked": [
+    "results/phase3/llm_cache_final.jsonl"
+  ],
+  "projected_live_calls": 893,
+  "upper_bound_prompted_decisions": 2304,
+  "rate_limit_rpm": 1000.0,
+  "projected_hours_at_rpm": 0.01,
+  "upper_bound_hours_at_rpm": 0.04,
+  "caveat": "counted on the dry-run stub's trajectories. The HVAC decision count is exact (prompted every step), but which prompts repeat -- across a household's baseline, CPP and scenario days until they diverge, and across households that reach the same rendered state -- depends on the real LLM's decisions, so the distinct-key count is an estimate. The upper bound (every HVAC step + every washer step from release to latest start, no cache reuse) is the hard ceiling. Retries not counted."
+}
