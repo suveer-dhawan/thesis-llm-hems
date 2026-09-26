@@ -18,3 +18,6 @@ __pycache__/
 Thesis/
 !results/phase3/
 !results/phase3/**
+
+# re-ignore after the results/ negations above (later rules win)
+.DS_Store
