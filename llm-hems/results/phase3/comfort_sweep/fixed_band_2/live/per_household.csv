@@ -1,0 +1,5 @@
+condition,global_scale,household_id,comfort_orientation,archetype,wtp_factor,hvac_kwh_base,hvac_kwh_cpp,e_flexible,e_total
+graded,1.0,8211127,comfort_prioritising,B,1.0,2.0,2.0,0.0,0.0
+graded,1.0,8568499,comfort_prioritising,C,0.7,2.0,2.0,0.0,0.0
+graded,1.0,10278838,comfort_flexible,A,1.3,3.0,1.0,-0.5641025641025641,-0.434593654932638
+graded,1.0,10444433,comfort_flexible,B,1.0,1.0,1.0,0.0,0.0

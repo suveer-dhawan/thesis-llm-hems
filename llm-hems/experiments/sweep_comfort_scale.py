@@ -40,11 +40,18 @@ Usage (from llm-hems/):
   PYTHONPATH=src .venv/bin/python experiments/sweep_comfort_scale.py premise
   PYTHONPATH=src .venv/bin/python experiments/sweep_comfort_scale.py sweep --project
   PYTHONPATH=src .venv/bin/python experiments/sweep_comfort_scale.py sweep --max-live 400
+
+`--fixed-band 2.0` gives every household the same +/-2.0C band (the orientation
+sentence is unchanged), isolating the orientation wording from the persona-linked
+band; outputs go to comfort_sweep/fixed_band_<C>/. `--no-decomp` skips the
+uniform-factor decomposition run. `--orientations` restricts the households
+simulated (groups left out show NaN).
 """
 
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import functools
 import json
 import time
@@ -216,8 +223,17 @@ class Sweep:
     `uniform` sets every household's factor to 1.0.
     """
 
-    def __init__(self, runner: Phase3Runner, project: bool = False, max_live: int | None = None):
+    def __init__(
+        self,
+        runner: Phase3Runner,
+        project: bool = False,
+        max_live: int | None = None,
+        fixed_band: float | None = None,
+        orientations: tuple[str, ...] = ORIENTATIONS,
+    ):
         self.runner = runner
+        self.fixed_band = fixed_band
+        self.households = [hid for hid, o in ORIENTATION_OF.items() if o in orientations]
         self.project = project
         self.max_live = max_live
         # The client the live sweep calls; in project mode it is only asked
@@ -250,6 +266,8 @@ class Sweep:
             return self.records[key]
         date = self.runner.cfg.dates[0]
         household, hvac, washer = self.runner.env(hid)
+        if self.fixed_band is not None:
+            hvac = dataclasses.replace(hvac, tolerance_band_c=self.fixed_band)
         factor = self.factor(hid, condition)
         results = {}
         for label in ("base", "cpp"):
@@ -291,7 +309,7 @@ class Sweep:
         return rec
 
     def at(self, scale: float, condition: str) -> list[ElasticityRecord]:
-        return [self.pair(hid, scale, condition) for hid in ORIENTATION_OF]
+        return [self.pair(hid, scale, condition) for hid in self.households]
 
     def upper_bound_prompts(self) -> int:
         """Distinct prompts if no two trajectories shared a state after they could diverge.
@@ -449,14 +467,20 @@ def trajectory_wtp_table(log: pd.DataFrame) -> pd.DataFrame:
 def run_sweep(args, out: Path) -> None:
     project = args.project
     runner = _runner(dry_run=args.dry_run or project)
-    sweep = Sweep(runner, project=project, max_live=None if project else args.max_live)
+    sweep = Sweep(
+        runner,
+        project=project,
+        max_live=None if project else args.max_live,
+        fixed_band=args.fixed_band,
+        orientations=tuple(args.orientations.split(",")),
+    )
     scales = [float(s) for s in args.scales.split(",")]
     method = runner.cfg.raw["elasticity_method"]
     t0 = time.time()
 
     a, a_total, c = scale_tables(sweep, scales, method)
     best, in_range = choose_scale(c, runner.cfg.calibration)
-    decomp = decomposition_table(sweep, best, method)
+    decomp = None if args.no_decomp else decomposition_table(sweep, best, method)
     log = pd.concat(sweep.logs, ignore_index=True)
     prompted = log[~log["forced"]]
     wall = time.time() - t0
@@ -466,7 +490,7 @@ def run_sweep(args, out: Path) -> None:
         ub = sweep.upper_bound_prompts()
         rpm = int((runner.cfg.llm_cfg.get("gemini") or {}).get("rate_limit_rpm", 5))
         proj = {
-            "households": ORIENTATION_OF,
+            "households": {hid: ORIENTATION_OF[hid] for hid in sweep.households},
             "scales": scales,
             "decomposition_scale_on_stub": best,
             "llm_window": LLM_WINDOW,
@@ -490,7 +514,8 @@ def run_sweep(args, out: Path) -> None:
     for name, df in (("a_flexible_by_group", a), ("a_total_by_group", a_total),
                      ("b_decomposition", decomp), ("c_total_vs_scale", c), ("per_household", hh),
                      ("trajectory_wtp", traj)):  # fmt: skip
-        df.to_csv(out / f"{name}.csv", index=False)
+        if df is not None:
+            df.to_csv(out / f"{name}.csv", index=False)
     stats = {
         "prompted_decisions": len(prompted),
         "distinct_prompts": int(prompted["prompt"].nunique()),
@@ -510,7 +535,16 @@ def run_sweep(args, out: Path) -> None:
         f"HVAC only, seed {SEED}, {runner.cfg.dates[0]}, CPP {runner.cfg.raw['cpp']['start']}-"
         f"{runner.cfg.raw['cpp']['end']} (0.55 -> 1.20 $/kWh), LLM window {LLM_WINDOW[0]}-"
         f"{LLM_WINDOW[1]} (thermostat outside), method `{method}`. Households: "
-        + ", ".join(f"{hid} ({o}, {runner.archetype(hid)})" for hid, o in ORIENTATION_OF.items()),
+        + ", ".join(f"{hid} ({o}, {runner.archetype(hid)})" for hid, o in ORIENTATION_OF.items()
+                   if hid in sweep.households),  # fmt: skip
+        "",
+        "Bands: "
+        + (
+            f"fixed at +/-{args.fixed_band}C for every household (orientation sentence unchanged)"
+            if args.fixed_band is not None
+            else "each persona's own"
+        )
+        + ".",
         "",
         f"Graded archetype factors {runner.cfg.archetype_factors}. Elasticity is pooled "
         "per group (sum kWh, then ratio); more negative = more elastic. Ordering flags need "
@@ -524,10 +558,17 @@ def run_sweep(args, out: Path) -> None:
         "",
         _md(a_total),
         "",
-        f"#### (b) decomposition at global_scale {best}: uniform (1.0/1.0/1.0) vs graded factors",
-        "",
-        _md(decomp),
-        "",
+        *(
+            []
+            if decomp is None
+            else [
+                f"#### (b) decomposition at global_scale {best}: uniform (1.0/1.0/1.0) vs "
+                "graded factors",
+                "",
+                _md(decomp),
+                "",
+            ]
+        ),
         f"#### (c) whole-household elasticity vs global_scale (Conway {CONWAY_RANGE}, "
         f"target {runner.cfg.calibration['target_elasticity']})",
         "",
@@ -563,11 +604,21 @@ def main() -> None:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--project", action="store_true", help="sweep: project live calls, no API")
     parser.add_argument("--max-live", type=int, default=400, help="sweep: live-call budget gate")
+    parser.add_argument(
+        "--fixed-band", type=float, default=None,
+        help="sweep: same +/-C comfort band for every household (orientation sentence kept)",
+    )  # fmt: skip
+    parser.add_argument(
+        "--orientations", default=",".join(ORIENTATIONS),
+        help="sweep: comma-separated comfort orientations to simulate (default all)",
+    )  # fmt: skip
+    parser.add_argument("--no-decomp", action="store_true", help="sweep: skip uniform decomposition")
     parser.add_argument("--out", default=None)
     args = parser.parse_args()
 
     sub = "projection" if args.project else ("dryrun" if args.dry_run else "live")
-    out = Path(args.out or OUT / sub)
+    base = OUT if args.fixed_band is None else OUT / f"fixed_band_{args.fixed_band:g}"
+    out = Path(args.out or base / sub)
     out.mkdir(parents=True, exist_ok=True)
     if args.step == "sweep":
         run_sweep(args, out)

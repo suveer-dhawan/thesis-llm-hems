@@ -1,0 +1,10 @@
+{
+  "prompted_decisions": 112,
+  "distinct_prompts": 50,
+  "live_calls": 50,
+  "cache_hits": 62,
+  "cache_hit_rate": 0.554,
+  "misread_calls": 0,
+  "wall_seconds": 550.1,
+  "dry_run": false
+}

@@ -1,0 +1,2 @@
+global_scale,pooled,prio,bal,flex,flex>bal>prio,arch A,arch B,arch C,C>B>A,HVAC kWh base->cpp
+1.0,-0.21153846153846156,0.0,,-0.42307692307692313,False,-0.5641025641025641,0.0,0.0,False,8->6

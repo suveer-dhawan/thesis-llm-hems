@@ -1,0 +1,7 @@
+over_ceiling_bin,comfort_prioritising mean_wtp,comfort_prioritising n,comfort_flexible mean_wtp,comfort_flexible n
+-1.0..-0.5,0.1,2,0.05,1
+-0.5..0,0.15,7,0.05000000000000001,3
+0..0.5,1.10625,8,0.23125,8
+0.5..1.0,2.1666666666666665,3,0.5700000000000001,5
+> 1.0,,0,0.9769230769230769,13
+< -1.0,,0,,0
