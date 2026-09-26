@@ -14,6 +14,8 @@ tests also assert the price/CPP fields are absent from the rendered prompt.
 
 from __future__ import annotations
 
+import json
+
 from hems.agents.base import DecisionContext
 import pytest
 
@@ -224,3 +226,21 @@ def test_washer_forced_states_skip_the_prompt():
     assert agent.prompted_decisions == 0
     agent.decide(_washer_ctx(t=10))  # released, not started -> a real decision
     assert agent.prompted_decisions == 1
+
+
+_PRICE_WORDS = ("price", "cost", "cheap", "tariff", "$")
+
+
+@pytest.mark.parametrize("orientation", sorted(COMFORT_ORIENTATION_TEXT))
+def test_rendered_prompts_and_schemas_carry_no_price_language(orientation):
+    agent = LLMAgent(dry_run=True)
+    household = {**HOUSEHOLD, "comfort_orientation": orientation}
+    prompts = [
+        agent._build_hvac_prompt(_hvac_ctx(indoor_temp_c=t, household=household))
+        for t in (23.0, 26.0, 28.5)
+    ] + [
+        agent._build_washer_prompt(_washer_ctx(t=t, deadline_step=20)) for t in (8, 14, 16)
+    ]
+    schemas = [json.dumps(s.model_json_schema()) for s in (HVACWTPResponse, WasherWTPResponse)]
+    for text in prompts + schemas:
+        assert not [w for w in _PRICE_WORDS if w in text.lower()], text

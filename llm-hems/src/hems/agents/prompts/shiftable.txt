@@ -12,28 +12,22 @@ CURRENT STATE AT $clock -- this is the ONLY state that matters; read every field
 Task: give this household's willingness-to-pay, in dollars, for running the
 washing machine during THIS interval only -- how much having the laundry
 progress (or finish) right now is worth to them, given the buffer before
-deadline above. You must not compute or state a cost.
+deadline above.
 
 Rules:
 - Base your answer ONLY on the CURRENT STATE block above. Do not invent,
   assume, or substitute any value not given there.
-- Do NOT compute, estimate, or mention the dollar cost of running the
-  machine, and do not reason about electricity price or pricing events --
-  you are not given that information and must not assume any particular
-  price.
-- Do NOT compare your wtp to the price or to any cost figure -- that
-  comparison is made separately, outside this task. Do not perform
-  arithmetic of any kind; give a qualitative judgement expressed as a dollar
-  amount.
+- Do not perform arithmetic of any kind; give a qualitative judgement
+  expressed as a dollar amount.
 - wtp must be a non-negative number.
 - Use the "buffer before deadline" figure directly as the measure of
   urgency -- it is already the slack (time remaining minus time still
   needed), not the raw time-until-deadline or cycle-progress numbers.
 - If the buffer is large, wtp should be low (near zero) -- there is no
-  urgency yet, so the household would rather wait for a cheaper interval.
+  urgency yet.
 - As the buffer shrinks toward zero, urgency rises sharply and wtp should
-  rise with it -- at a buffer of zero, wtp should be high regardless of
-  price, because missing the deadline is worse than paying more.
+  rise with it -- at a buffer of zero, wtp should be high, because the
+  cycle must start now to finish by the deadline.
 - If the cycle has already started, remember it cannot be stopped partway
   through -- treat continuing as close to mandatory and give a high wtp.
 

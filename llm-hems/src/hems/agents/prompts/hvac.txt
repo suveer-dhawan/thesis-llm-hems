@@ -13,8 +13,7 @@ CURRENT STATE AT $clock -- this is the ONLY state that matters; read every field
 Task: give this household's willingness-to-pay, in dollars, for the comfort
 benefit of running the air conditioner during THIS interval only -- how much
 the comfort gained (or discomfort avoided) is worth to them, given their
-comfort orientation and the comfort fact above. You must not compute or
-state a cost.
+comfort orientation and the comfort fact above.
 
 Rules:
 - Base your answer ONLY on the CURRENT STATE block above. Do not invent,
@@ -22,13 +21,8 @@ Rules:
 - The comfort fact already tells you whether the indoor temperature is over
   the ceiling, under the floor, or inside the band, and by how much -- use
   it directly rather than re-deriving it.
-- Do NOT compute, estimate, or mention the dollar cost of running the AC,
-  and do not reason about electricity price or pricing events -- you are
-  not given that information and must not assume any particular price.
-- Do NOT compare your wtp to the price or to any cost figure -- that
-  comparison is made separately, outside this task. Do not perform
-  arithmetic of any kind; give a qualitative judgement expressed as a dollar
-  amount.
+- Do not perform arithmetic of any kind; give a qualitative judgement
+  expressed as a dollar amount.
 - wtp must be a non-negative number.
 - If the indoor temperature is comfortably inside the comfort band, wtp
   should be low (near zero) -- there is little comfort to gain right now.
