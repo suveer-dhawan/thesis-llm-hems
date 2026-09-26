@@ -1,0 +1,151 @@
+{
+  "households": [
+    8211127,
+    10042536,
+    10444433
+  ],
+  "seed": 42,
+  "method": "base",
+  "conway_range": [
+    -0.47,
+    -0.026
+  ],
+  "aggregate": [
+    {
+      "agent": "llm",
+      "n": 3,
+      "elasticity_hvac": -0.42307692307692296,
+      "elasticity_washer": -0.564102564102564,
+      "elasticity_flexible": -0.4759615384615383,
+      "elasticity_total": -0.14212226342863973,
+      "in_conway_total": true
+    },
+    {
+      "agent": "milp",
+      "n": 3,
+      "elasticity_hvac": -0.6043956043956042,
+      "elasticity_washer": NaN,
+      "elasticity_flexible": -0.6043956043956042,
+      "elasticity_total": -0.14317323961994008,
+      "in_conway_total": true
+    },
+    {
+      "agent": "noisy_milp",
+      "n": 3,
+      "elasticity_hvac": -0.725274725274725,
+      "elasticity_washer": 0.0,
+      "elasticity_flexible": -0.6860706860706859,
+      "elasticity_total": -0.1695132913830743,
+      "in_conway_total": true
+    },
+    {
+      "agent": "rule_based",
+      "n": 3,
+      "elasticity_hvac": -0.3384615384615384,
+      "elasticity_washer": -0.3525641025641025,
+      "elasticity_flexible": -0.3453689167974881,
+      "elasticity_total": -0.10462489596956373,
+      "in_conway_total": true
+    }
+  ],
+  "by_archetype": [
+    {
+      "archetype": "B",
+      "n": 2,
+      "elasticity_hvac": -0.42307692307692296,
+      "elasticity_washer": -0.42307692307692296,
+      "elasticity_flexible": -0.42307692307692296,
+      "elasticity_total": -0.23726711423872296,
+      "in_conway_total": true,
+      "agent": "llm"
+    },
+    {
+      "archetype": "C",
+      "n": 1,
+      "elasticity_hvac": -0.42307692307692296,
+      "elasticity_washer": -0.8461538461538459,
+      "elasticity_flexible": -0.581730769230769,
+      "elasticity_total": -0.0897646090046514,
+      "in_conway_total": true,
+      "agent": "llm"
+    },
+    {
+      "archetype": "B",
+      "n": 2,
+      "elasticity_hvac": -0.6346153846153845,
+      "elasticity_washer": NaN,
+      "elasticity_flexible": -0.6346153846153845,
+      "elasticity_total": -0.28167571443203926,
+      "in_conway_total": true,
+      "agent": "milp"
+    },
+    {
+      "archetype": "C",
+      "n": 1,
+      "elasticity_hvac": -0.564102564102564,
+      "elasticity_washer": NaN,
+      "elasticity_flexible": -0.564102564102564,
+      "elasticity_total": -0.08239885540499035,
+      "in_conway_total": true,
+      "agent": "milp"
+    },
+    {
+      "archetype": "B",
+      "n": 2,
+      "elasticity_hvac": -0.8461538461538459,
+      "elasticity_washer": 0.0,
+      "elasticity_flexible": -0.769230769230769,
+      "elasticity_total": -0.3596063944555231,
+      "in_conway_total": true,
+      "agent": "noisy_milp"
+    },
+    {
+      "archetype": "C",
+      "n": 1,
+      "elasticity_hvac": -0.564102564102564,
+      "elasticity_washer": NaN,
+      "elasticity_flexible": -0.564102564102564,
+      "elasticity_total": -0.08239885540499035,
+      "in_conway_total": true,
+      "agent": "noisy_milp"
+    },
+    {
+      "archetype": "B",
+      "n": 2,
+      "elasticity_hvac": 0.0,
+      "elasticity_washer": -0.21153846153846145,
+      "elasticity_flexible": -0.1091811414392059,
+      "elasticity_total": -0.060374873075550964,
+      "in_conway_total": true,
+      "agent": "rule_based"
+    },
+    {
+      "archetype": "C",
+      "n": 1,
+      "elasticity_hvac": -0.8461538461538459,
+      "elasticity_washer": -0.6346153846153846,
+      "elasticity_flexible": -0.752136752136752,
+      "elasticity_total": -0.12809595551576825,
+      "in_conway_total": true,
+      "agent": "rule_based"
+    }
+  ],
+  "archetype_ordering": {
+    "llm": {
+      "values": {
+        "B": -0.23726711423872296,
+        "C": -0.0897646090046514
+      },
+      "C_more_elastic_than_B": false,
+      "B_more_elastic_than_A": false
+    },
+    "rule_based": {
+      "values": {
+        "B": -0.060374873075550964,
+        "C": -0.12809595551576825
+      },
+      "C_more_elastic_than_B": true,
+      "B_more_elastic_than_A": false
+    }
+  }
+}

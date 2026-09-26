@@ -1,0 +1,19 @@
+{
+  "households": [
+    8211127,
+    10042536,
+    10444433
+  ],
+  "steps": [
+    "elasticity",
+    "overlay",
+    "scenario",
+    "seeds"
+  ],
+  "llm_prompted_decisions": 630,
+  "llm_live_calls": 0,
+  "llm_model_versions": {},
+  "llm_prompt_upper_bound": 651,
+  "llm_client_stats_by_seed": {},
+  "wall_seconds": 7.5
+}
