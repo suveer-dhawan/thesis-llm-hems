@@ -31,6 +31,17 @@ llm:
   temperature: 0.0
   seed: 42
 
+  # Retry / backoff for every provider (llm/client.py complete_json): a
+  # failed call (transient error or schema-validation failure) is retried
+  # max_retries times; the n-th retry sleeps min(base_s * 2^n, max_s), or
+  # max(rate_limited_min_s, base_s * 2^n) on a 429 / RESOURCE_EXHAUSTED
+  # (the provider's own retryDelay is typically 15-20s).
+  max_retries: 2
+  backoff:
+    base_s: 1.0
+    max_s: 8.0
+    rate_limited_min_s: 20.0
+
   matilda:
     # Maincode's Matilda API (matilda-client SDK). Matilda owns model/provider
     # routing internally -- chat.create_object exposes no `model`,
@@ -45,6 +56,7 @@ llm:
     # observed spread across 3 reps of the same day is logged in
     # results/phase2_diagnostics/diagnostics_summary.json (run 2026-09-06).
     base_url: https://matilda.maincode.com/api
+    timeout_s: 60.0                # per-call timeout (Matilda's async call only)
     sdk_version: matilda-client==0.3.0   # `pip show matilda-client`; bump when the SDK is upgraded
     confirmed_date: "2026-09-06"         # date this pipeline last confirmed working end to end
     model: null                    # not exposed by the API -- see note above
@@ -115,10 +127,19 @@ rule_based:
   # washer_w_max: live slice log (results/phase3/live_slice/) -- the comfort
   # sweep never started the washer; the slice is the only live washer WTP
   # (13 distinct prompts, 2 households), so w_max is the weaker of the fits.
-  hvac_k:                          # $ per degC over the band ceiling
+  hvac_k:                          # $ per degC over the band ceiling (persona band mode)
     comfort_prioritising: 2.712
     balanced: 0.620
     comfort_flexible: 0.511
+  # Fixed +/-2.0 band mode: refit on every distinct prompt whose band is
+  # +/-2.0 (persona sweep: balanced; fixed_band_2 sweep: prioritising +
+  # flexible). The band shown in the prompt moves the LLM's WTP per degree
+  # over the ceiling, so the persona-band k would mis-level the control
+  # here. Archetype factors don't enter the fit (raw, pre-factor WTP).
+  hvac_k_fixed_band:
+    comfort_prioritising: 3.791
+    balanced: 0.620
+    comfort_flexible: 0.660
   washer_w_max: 0.888              # $ at zero slack
 
 results_dir: results             # timestamped run folders written here (gitignored)
@@ -141,13 +162,21 @@ phase3:
   rebound_hours: 2                  # post-event window for the rebound-peak metric
   elasticity_method: base           # base = BUILD_SPEC §10 formula; midpoint also reported
 
-  # Deterministic WTP scaling applied in Python (agents/llm_agent.py):
-  #   effective_WTP = LLM_WTP x global_scale x archetype_factors[archetype]
+  # Comfort band for every agent (MILP constraint, noisy-MILP jitter centre,
+  # rule-based ceiling, LLM prompt): `fixed` = +/-fixed_band_c for every
+  # household (primary: isolates the comfort-orientation wording from the
+  # persona-linked band); `persona` = each household's own tolerance_band_c.
+  # The comfort orientation is the persona's in both modes.
+  band_mode: fixed                  # fixed | persona  (run_phase3.py --band-mode overrides)
+  fixed_band_c: 2.0
+
+  # Deterministic WTP scaling applied in Python -- identically for the LLM
+  # agent and the rule-based satisficer (same halt, agents/llm_agent.py):
+  #   effective_WTP = WTP x global_scale x archetype_factors[archetype]
   # The LLM carries only the comfort valuation (comfort-orientation persona);
   # cost sensitivity (energy-burden archetype A/B/C, config/persona.yaml)
-  # enters here and is never shown to the model. global_scale is the value
-  # used when not calibrating -- calibration sweeps `calibration.scale_grid`
-  # in its place, with the archetype factors held fixed.
+  # enters here and is never shown to the model. Calibration is disabled
+  # (calibration.enabled), so global_scale is the scale every run uses.
   wtp_scaling:
     global_scale: 1.0
     archetype_factors:              # A = low burden (least cost-sensitive) ... C = high burden
@@ -155,16 +184,34 @@ phase3:
       B: 1.0
       C: 0.7
 
-  seeds: [42, 43, 44]               # run-to-run spread (T=0 is deterministic per seed)
-  llm_cache_path: results/phase3/llm_cache.jsonl   # append-only, reused across every Phase 3 run
+  # Seeds. The LLM runs at T=0 on one seed; noisy-MILP's jitter is drawn per
+  # seed, so it carries the run-to-run spread. MILP and rule-based are
+  # deterministic (seed-free). The first entry of each list is the primary
+  # seed used by elasticity / overlay / scenario.
+  llm_seeds: [42]
+  noisy_milp_seeds: [42, 43, 44]
+
+  # Conway 2020 Australian short-run own-price elasticity range -- the band
+  # every summary checks whole-household elasticity against.
+  conway_range: [-0.47, -0.026]
+
+  # Append-only JSONL LLM cache (llm/client.py). The final run uses a fresh
+  # file: the prompts changed (price language removed) and the cache key now
+  # includes the response-schema hash + max_output_tokens, so no older entry
+  # could be hit anyway. run_phase3.py --cache-path overrides (sharding).
+  llm_cache_path: results/phase3/llm_cache_final.jsonl
 
   calibration:
+    # DISABLED for the final run: global_scale is fixed at
+    # wtp_scaling.global_scale (1.0). run_phase3.py refuses the `calibrate`
+    # step while enabled is false. The pre-registered rule is kept for record.
+    enabled: false
     # PRE-REGISTERED (fixed before any live calibration run):
     #   split  : `fraction` of households per archetype -> calibration, rest held out,
     #            shuffled within archetype by `split_seed`.
     #   fit    : one global wtp_scale (= wtp_scaling.global_scale), chosen from `scale_grid` at `fit_seed` as the
     #            grid value whose POOLED whole-household (total) elasticity on the
-    #            calibration subset is inside `conway_range` and closest to
+    #            calibration subset is inside phase3.conway_range and closest to
     #            `target_elasticity`; if none is inside, the closest overall, flagged.
     #   report : elasticity on the held-out subset at the frozen scale.
     # target -0.25 = arithmetic midpoint of Conway 2020's -0.026..-0.47 range
@@ -173,7 +220,6 @@ phase3:
     split_seed: 42
     fit_seed: 42
     target_elasticity: -0.25
-    conway_range: [-0.47, -0.026]
     scale_grid: [0.25, 0.5, 1.0, 2.0, 4.0]
 
   scenario:

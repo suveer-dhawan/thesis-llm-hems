@@ -65,10 +65,17 @@ class RuleBasedParams:
     w_max: float  # $ at zero slack
 
     @classmethod
-    def from_yaml(cls, path: str | Path = DEFAULT_EXPERIMENT_CONFIG) -> "RuleBasedParams":
+    def from_yaml(
+        cls, path: str | Path = DEFAULT_EXPERIMENT_CONFIG, band_mode: str = "persona"
+    ) -> "RuleBasedParams":
+        """`band_mode` picks the k fitted on prompts at that band: `persona` ->
+        `rule_based.hvac_k`, `fixed` -> `rule_based.hvac_k_fixed_band`."""
         cfg = yaml.safe_load(Path(path).read_text())["rule_based"]
+        keys = {"persona": "hvac_k", "fixed": "hvac_k_fixed_band"}
+        if band_mode not in keys:
+            raise ValueError(f"unknown band_mode '{band_mode}' (persona | fixed)")
         return cls(
-            k_by_orientation={str(o): float(v) for o, v in cfg["hvac_k"].items()},
+            k_by_orientation={str(o): float(v) for o, v in cfg[keys[band_mode]].items()},
             w_max=float(cfg["washer_w_max"]),
         )
 

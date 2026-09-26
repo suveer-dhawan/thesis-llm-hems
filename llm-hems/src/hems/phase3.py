@@ -5,6 +5,10 @@ Responsibility (BUILD_SPEC.md §10-13 Phase 3): the library behind
 driven by the `phase3:` block of `config/experiment.yaml` plus the persona
 assignment (`config/persona_assignment.csv`).
 
+- Agents: MILP, noisy-MILP, the rule-based satisficer (the LLM agent's halt
+  with a formula WTP) and the LLM. The rule-based agent and the LLM get the
+  same global_scale and archetype factor. `phase3.band_mode` sets every
+  agent's comfort band (`fixed` +/-fixed_band_c, or each `persona`'s own).
 - `Phase3Runner.run_day` simulates one household x agent x seed x wtp_scale
   on one date under one tariff variant, memoised so a step that re-asks for
   the same run (calibration grid point == frozen scale, overlay == elasticity
@@ -16,13 +20,16 @@ assignment (`config/persona_assignment.csv`).
   scenario.
 
 LLM cost control: one `LLMClient` per seed, all sharing one append-only disk
-cache (`phase3.llm_cache_path`); `dry_run=True` swaps in the deterministic
-stub so the whole pipeline runs with zero spend.
+cache (`phase3.llm_cache_path`, overridable per run for sharding);
+`dry_run=True` swaps in the deterministic stub so the whole pipeline runs
+with zero spend.
 """
 
 from __future__ import annotations
 
+import dataclasses
 import datetime as dt
+import json
 import random
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -33,6 +40,7 @@ import yaml
 from hems.agents.llm_agent import LLMAgent
 from hems.agents.milp_agent import MILPAgent
 from hems.agents.noisy_milp_agent import NoisyMILPAgent
+from hems.agents.rule_based_agent import RuleBasedParams, RuleBasedSatisficerAgent
 from hems.analysis.elasticity import ElasticityRecord, household_elasticity, pooled_elasticity
 from hems.environment.appliances import HVACParams, WasherParams, _clock_to_step
 from hems.environment.household import Household
@@ -45,29 +53,52 @@ from hems.environment.simulator import RunResult, run_simulation
 from hems.environment.tariff import Tariff
 from hems.llm.client import LLMClient, build_llm_client
 
-AGENTS = ("milp", "noisy_milp", "llm")
+AGENTS = ("milp", "noisy_milp", "rule_based", "llm")
+WTP_AGENTS = ("rule_based", "llm")  # emit a WTP through the shared halt -> scale + factor apply
+DETERMINISTIC_AGENTS = ("milp", "rule_based")  # no seed dependence
+BAND_MODES = ("fixed", "persona")
 DEFAULT_EXPERIMENT_CONFIG = "config/experiment.yaml"
 
 
 @dataclass(frozen=True)
 class Phase3Config:
-    raw: dict  # the resolved `phase3:` block, written into every results folder
+    raw: dict  # the resolved `phase3:` block (overrides applied), written into every results folder
     llm_cfg: dict
     experiment_path: str
     dry_run: bool
     thermal: ThermalHeterogeneity = ThermalHeterogeneity()
+    full: dict = field(default_factory=dict)  # the whole experiment.yaml, as loaded
 
     @classmethod
     def from_yaml(
-        cls, path: str = DEFAULT_EXPERIMENT_CONFIG, dry_run: bool = False
+        cls,
+        path: str = DEFAULT_EXPERIMENT_CONFIG,
+        dry_run: bool = False,
+        band_mode: str | None = None,
+        cache_path: str | None = None,
+        thermal_enabled: bool | None = None,
     ) -> "Phase3Config":
+        """Load experiment.yaml; `band_mode` / `cache_path` / `thermal_enabled`
+        override the file's values and are written back into `raw` / `thermal`
+        so the resolved config records what actually ran."""
         cfg = yaml.safe_load(Path(path).read_text())
+        raw = dict(cfg["phase3"])
+        if band_mode is not None:
+            raw["band_mode"] = band_mode
+        if cache_path is not None:
+            raw["llm_cache_path"] = cache_path
+        if raw.get("band_mode", "persona") not in BAND_MODES:
+            raise ValueError(f"phase3.band_mode must be one of {BAND_MODES}")
+        thermal = ThermalHeterogeneity.from_config(cfg.get("thermal_heterogeneity"))
+        if thermal_enabled is not None:
+            thermal = replace(thermal, enabled=thermal_enabled)
         return cls(
-            raw=cfg["phase3"],
+            raw=raw,
             llm_cfg=cfg.get("llm", {}),
             experiment_path=path,
             dry_run=dry_run,
-            thermal=ThermalHeterogeneity.from_config(cfg.get("thermal_heterogeneity")),
+            thermal=thermal,
+            full=cfg,
         )
 
     @property
@@ -83,12 +114,84 @@ class Phase3Config:
         return int(round(float(self.raw["rebound_hours"]) * 2))
 
     @property
-    def seeds(self) -> list[int]:
-        return [int(s) for s in self.raw["seeds"]]
+    def band_mode(self) -> str:
+        return str(self.raw.get("band_mode", "persona"))
+
+    @property
+    def fixed_band_c(self) -> float:
+        return float(self.raw["fixed_band_c"])
+
+    @property
+    def llm_seeds(self) -> list[int]:
+        return [int(s) for s in self.raw["llm_seeds"]]
+
+    @property
+    def noisy_milp_seeds(self) -> list[int]:
+        return [int(s) for s in self.raw["noisy_milp_seeds"]]
+
+    @property
+    def primary_seed(self) -> int:
+        """The seed elasticity / overlay / scenario run at (first LLM seed)."""
+        return self.llm_seeds[0]
+
+    def seeds_for(self, agent: str) -> list[int]:
+        """Seeds an agent is run at: one for deterministic agents, the lists otherwise."""
+        if agent in DETERMINISTIC_AGENTS:
+            return [self.primary_seed]
+        return self.noisy_milp_seeds if agent == "noisy_milp" else self.llm_seeds
+
+    @property
+    def conway_range(self) -> tuple[float, float]:
+        lo, hi = (float(x) for x in self.raw["conway_range"])
+        return lo, hi
 
     @property
     def calibration(self) -> dict:
         return self.raw["calibration"]
+
+    @property
+    def calibration_enabled(self) -> bool:
+        return bool(self.calibration.get("enabled", True))
+
+    def rule_based_params(self) -> RuleBasedParams:
+        return RuleBasedParams.from_yaml(self.experiment_path, band_mode=self.band_mode)
+
+    def resolved(self) -> dict:
+        """Everything that shapes a run, for `config_resolved.yaml`."""
+        rb = self.rule_based_params()
+        resolved = {
+            "phase3": self.raw,
+            "band": {
+                "mode": self.band_mode,
+                "fixed_band_c": self.fixed_band_c if self.band_mode == "fixed" else None,
+            },
+            "seeds": {
+                "primary": self.primary_seed,
+                "llm": self.llm_seeds,
+                "noisy_milp": self.noisy_milp_seeds,
+                "deterministic_agents": list(DETERMINISTIC_AGENTS),
+            },
+            "wtp_scaling": {
+                "global_scale": self.global_scale,
+                "archetype_factors": self.archetype_factors,
+                "applies_to": list(WTP_AGENTS),
+                "calibration_enabled": self.calibration_enabled,
+            },
+            "thermal_heterogeneity": dataclasses.asdict(self.thermal),
+            "rule_based": {
+                **(self.full.get("rule_based") or {}),
+                "band_mode_used": self.band_mode,
+                "hvac_k_used": rb.k_by_orientation,
+                "washer_w_max_used": rb.w_max,
+            },
+            "noisy_milp": self.full.get("noisy_milp"),
+            "llm": self.llm_cfg,
+            "agents": list(AGENTS),
+            "dry_run": self.dry_run,
+            "experiment_path": self.experiment_path,
+        }
+        # plain JSON types (tuples -> lists), so it reads back from YAML identically
+        return json.loads(json.dumps(resolved))
 
     @property
     def fit_seed(self) -> int:
@@ -114,6 +217,7 @@ class DayRun:
     label: str  # "base" | "cpp" | scenario variant name
     result: RunResult
     llm_log: pd.DataFrame | None = None
+    rule_log: pd.DataFrame | None = None  # rule-based satisficer's per-decision log
     prompted: int = 0  # LLM decisions that needed a model answer
     live_calls: int = 0  # of those, how many went to the API (not cache, not stub)
 
@@ -128,6 +232,7 @@ class Phase3Runner:
         self.assignment = load_assignment(self.cfg.raw["persona_assignment"])
         self.tariff = Tariff.from_yaml("config/tariff.yaml")
         self._envs: dict[int, tuple[Household, HVACParams, WasherParams]] = {}
+        self.rule_params = self.cfg.rule_based_params()
         self._clients: dict[int, LLMClient] = {}
         self._runs: dict[tuple, DayRun] = {}
 
@@ -143,10 +248,14 @@ class Phase3Runner:
         return self.cfg.archetype_factors.get(self.archetype(household_id), 1.0)
 
     def env(self, household_id: int) -> tuple[Household, HVACParams, WasherParams]:
+        """Household + HVAC/washer params, with the run's band mode applied."""
         if household_id not in self._envs:
-            self._envs[household_id] = load_persona_environment(
+            household, hvac, washer = load_persona_environment(
                 household_id, self.assignment, thermal=self.cfg.thermal
             )
+            if self.cfg.band_mode == "fixed":
+                hvac = replace(hvac, tolerance_band_c=self.cfg.fixed_band_c)
+            self._envs[household_id] = (household, hvac, washer)
         return self._envs[household_id]
 
     def client(self, seed: int) -> LLMClient:
@@ -186,13 +295,13 @@ class Phase3Runner:
         wtp_scale: float = 1.0,
     ) -> DayRun:
         """One simulated day, memoised on every input that can change it."""
-        scale_key = wtp_scale if agent_name == "llm" else 1.0
+        scale_key = wtp_scale if agent_name in WTP_AGENTS else 1.0
         key = (
             household_id,
             agent_name,
             date,
             label,
-            seed if agent_name != "milp" else 0,
+            seed if agent_name not in DETERMINISTIC_AGENTS else 0,
             scale_key,
         )
         if key in self._runs:
@@ -223,6 +332,10 @@ class Phase3Runner:
             # The jittered params are this household's real preferences (see
             # noisy_milp_agent.py), so they drive its own accounting too.
             hvac, washer = agent.jittered_hvac_params, agent.jittered_washer_params
+        elif agent_name == "rule_based":
+            agent = RuleBasedSatisficerAgent(
+                self.rule_params, wtp_scale=wtp_scale, wtp_factor=self.wtp_factor(household_id)
+            )
         elif agent_name == "llm":
             factor = self.wtp_factor(household_id)
             agent = (
@@ -240,6 +353,8 @@ class Phase3Runner:
             prompted = run.llm_log[~run.llm_log["forced"]]
             run.prompted = len(prompted)
             run.live_calls = int((~prompted["cached"] & ~prompted["dry_run"]).sum())
+        elif isinstance(agent, RuleBasedSatisficerAgent):
+            run.rule_log = agent.log_to_dataframe()
         self._runs[key] = run
         return run
 
@@ -259,7 +374,7 @@ class Phase3Runner:
             for date in self.cfg.dates:
                 base, cpp = self.run_pair(hid, agent_name, date, seed, wtp_scale)
                 rec = household_elasticity(base.result, cpp.result, seed, self.archetype(hid))
-                rec.wtp_scale = wtp_scale if agent_name == "llm" else None
+                rec.wtp_scale = wtp_scale if agent_name in WTP_AGENTS else None
                 records.append(rec)
         return records
 
@@ -269,6 +384,10 @@ class Phase3Runner:
             "prompted_decisions": sum(r.prompted for r in llm_runs),
             "live_calls_this_process": sum(r.live_calls for r in llm_runs),
             "client_stats_by_seed": {s: dict(c.stats) for s, c in self._clients.items()},
+            "model_versions_by_seed": {
+                s: dict(c.model_versions_seen) for s, c in self._clients.items()
+            },
+            "client_settings_by_seed": {s: c.settings for s, c in self._clients.items()},
             "dry_run": self.cfg.dry_run,
         }
 
@@ -313,7 +432,7 @@ class ScaleFit:
 
 def fit_scale(runner: Phase3Runner, calibration_ids: list[int]) -> ScaleFit:
     cal = runner.cfg.calibration
-    lo, hi = (float(x) for x in cal["conway_range"])
+    lo, hi = runner.cfg.conway_range
     target = float(cal["target_elasticity"])
     method = runner.cfg.raw["elasticity_method"]
     rows = []
@@ -372,8 +491,13 @@ def scenario_verdict(run: DayRun, spike: tuple[int, int], deadline_step: int, va
 
 
 def run_scenario(
-    runner: Phase3Runner, household_ids: list[int], seeds: list[int], wtp_scale: float
+    runner: Phase3Runner,
+    household_ids: list[int],
+    wtp_scale: float,
+    seeds_by_agent: dict[str, list[int]] | None = None,
 ) -> pd.DataFrame:
+    """Each agent at its own seeds (default: the primary seed for everyone)."""
+    seeds_by_agent = seeds_by_agent or {a: [runner.cfg.primary_seed] for a in AGENTS}
     sc = runner.cfg.raw["scenario"]
     spike = (_clock_to_step(sc["spike"]["start"]), _clock_to_step(sc["spike"]["end"]))
     date = runner.cfg.dates[0]
@@ -382,8 +506,7 @@ def run_scenario(
         deadline = _clock_to_step(v["washer_deadline"])
         for hid in household_ids:
             for agent in AGENTS:
-                agent_seeds = [seeds[0]] if agent == "milp" else seeds
-                for seed in agent_seeds:
+                for seed in seeds_by_agent[agent]:
                     run = runner.run_day(hid, agent, date, variant, seed, wtp_scale)
                     rows.append(scenario_verdict(run, spike, deadline, variant))
     return pd.DataFrame(rows)

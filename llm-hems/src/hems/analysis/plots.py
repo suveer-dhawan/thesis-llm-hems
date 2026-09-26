@@ -90,14 +90,15 @@ def plot_four_way(
 ) -> None:
     """Four-way daily load-curve overlay (BUILD_SPEC.md §11), baseline vs CPP day.
 
-    Each dict maps a series label -- "SGSC base", "MILP", "noisy-MILP", "LLM"
-    -- to a kWh-per-half-hour curve (one household, or a population sum). The
+    Each dict maps a series label -- "SGSC base", "MILP", "noisy-MILP",
+    "rule-based", "LLM" -- to a kWh-per-half-hour curve (one household, or a population sum). The
     CPP window `[start, end)` (step indices) is shaded on the CPP panel.
     """
     styles = {
         "SGSC base": {"color": "0.45", "linestyle": "--", "linewidth": 1.4},
         "MILP": {"color": _PALETTE[0], "linewidth": 1.6},
         "noisy-MILP": {"color": _PALETTE[1], "linewidth": 1.6},
+        "rule-based": {"color": "#8172B3", "linewidth": 1.6},  # not _PALETTE[3]: the CPP shade
         "LLM": {"color": _PALETTE[2], "linewidth": 2.2},
     }
     fig, axes = plt.subplots(1, 2, figsize=(15, 4.8), sharey=True)

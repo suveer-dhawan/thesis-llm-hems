@@ -60,9 +60,8 @@ from pathlib import Path
 import pandas as pd
 
 from hems.agents.base import Decision, DecisionContext
-from hems.agents.llm_agent import LLMAgent
+from hems.agents.llm_agent import SCHEMA_BY_APPLIANCE, LLMAgent
 from hems.analysis.elasticity import (
-    CONWAY_RANGE,
     ElasticityRecord,
     household_elasticity,
     in_conway_range,
@@ -71,6 +70,7 @@ from hems.analysis.elasticity import (
 from hems.environment.appliances import _clock_to_step
 from hems.environment.simulator import run_simulation
 from hems.phase3 import Phase3Config, Phase3Runner
+from hems.provenance import write_provenance
 
 print = functools.partial(print, flush=True)  # noqa: A001 -- unbuffered for background monitoring
 
@@ -111,7 +111,8 @@ class WindowedHVACAgent:
 
 
 def _runner(dry_run: bool) -> Phase3Runner:
-    runner = Phase3Runner(Phase3Config.from_yaml(dry_run=dry_run))
+    # persona: --fixed-band is applied by this script on top of runner.env()
+    runner = Phase3Runner(Phase3Config.from_yaml(dry_run=dry_run, band_mode="persona"))
     a = runner.assignment.set_index("customer_ID")
     for orientation, ids in HOUSEHOLDS.items():
         for hid in ids:
@@ -293,7 +294,11 @@ class Sweep:
                 condition=condition,
             )
             if self.project:
-                self.uncached.update(p for p in log["prompt"] if not self.client.is_cached(p))
+                self.uncached.update(
+                    p
+                    for p in log["prompt"]
+                    if not self.client.is_cached(p, SCHEMA_BY_APPLIANCE["hvac"])
+                )
             self.logs.append(log)
             print(
                 f"[sweep] {condition:7s} scale={scale:<4} {ORIENTATION_OF[hid]:21s} {hid:>8} "
@@ -364,6 +369,7 @@ def scale_tables(
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """(flexible-layer table, whole-household table, calibration summary) over the grid."""
     flex_rows, total_rows, c_rows = [], [], []
+    conway = sweep.runner.cfg.conway_range
     for s in scales:
         recs = sweep.at(s, "graded")
         flex_rows.append(
@@ -381,7 +387,7 @@ def scale_tables(
                 "global_scale": s,
                 "e_total (pooled)": e_total,
                 "e_flexible (pooled)": _pooled(recs, "flexible", method),
-                "in_conway": in_conway_range(e_total),
+                "in_conway": in_conway_range(e_total, conway),
             }
         )
     return pd.DataFrame(flex_rows), pd.DataFrame(total_rows), pd.DataFrame(c_rows)
@@ -569,7 +575,8 @@ def run_sweep(args, out: Path) -> None:
                 "",
             ]
         ),
-        f"#### (c) whole-household elasticity vs global_scale (Conway {CONWAY_RANGE}, "
+        f"#### (c) whole-household elasticity vs global_scale "
+        f"(Conway {list(runner.cfg.conway_range)}, "
         f"target {runner.cfg.calibration['target_elasticity']})",
         "",
         _md(c),
@@ -620,6 +627,7 @@ def main() -> None:
     base = OUT if args.fixed_band is None else OUT / f"fixed_band_{args.fixed_band:g}"
     out = Path(args.out or base / sub)
     out.mkdir(parents=True, exist_ok=True)
+    write_provenance(out)
     if args.step == "sweep":
         run_sweep(args, out)
         return

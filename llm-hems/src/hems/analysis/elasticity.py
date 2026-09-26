@@ -21,7 +21,9 @@ mean of ratios), which keeps near-zero `Q_base` households from dominating.
 `method="base"` is the spec formula above (default). `method="midpoint"` is
 the symmetric arc (midpoint) formula, reported for robustness.
 
-Conway 2020's Australian short-run range is -0.026 to -0.47 (§10).
+Conway 2020's Australian short-run range is -0.026 to -0.47 (§10). Runs take
+it from `phase3.conway_range` in experiment.yaml; `CONWAY_RANGE` below is only
+the default for callers that don't pass one.
 """
 
 from __future__ import annotations
@@ -53,8 +55,9 @@ def arc_elasticity(
     raise ValueError(f"unknown elasticity method '{method}' (base | midpoint)")
 
 
-def in_conway_range(e: float) -> bool:
-    return not math.isnan(e) and CONWAY_RANGE[0] <= e <= CONWAY_RANGE[1]
+def in_conway_range(e: float, conway_range: tuple[float, float] = CONWAY_RANGE) -> bool:
+    lo, hi = conway_range
+    return not math.isnan(e) and lo <= e <= hi
 
 
 def cpp_window_steps(result: RunResult) -> list[int]:
@@ -162,6 +165,7 @@ def elasticity_table(
     records: list[ElasticityRecord],
     group_by: str | None = None,
     method: str = "base",
+    conway_range: tuple[float, float] = CONWAY_RANGE,
 ) -> pd.DataFrame:
     """Pooled elasticity per component, optionally per `group_by` value.
 
@@ -179,7 +183,7 @@ def elasticity_table(
         row = {group_by or "group": key, "n": len(recs)}
         for c in COMPONENTS:
             row[f"elasticity_{c}"] = pooled_elasticity(recs, c, method)
-        row["in_conway_total"] = in_conway_range(row["elasticity_total"])
+        row["in_conway_total"] = in_conway_range(row["elasticity_total"], conway_range)
         rows.append(row)
     return pd.DataFrame(rows)
 

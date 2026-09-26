@@ -38,7 +38,9 @@ def free_drift_temps(hp: HVACParams, initial_temp_c: float) -> list[float]:
     gain = hp.dt_hours / (hp.r * hp.c)
     temps = [initial_temp_c]
     for t in range(STEPS_PER_DAY):
-        t_out = synthetic_outdoor_temp_c(t, hp.outdoor_min_c, hp.outdoor_max_c, hp.outdoor_peak_hour)
+        t_out = synthetic_outdoor_temp_c(
+            t, hp.outdoor_min_c, hp.outdoor_max_c, hp.outdoor_peak_hour
+        )
         temps.append(temps[-1] + gain * (t_out - temps[-1]))
     return temps
 

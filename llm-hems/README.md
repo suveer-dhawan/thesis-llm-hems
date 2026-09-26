@@ -113,29 +113,47 @@ physics. The MILP also plans with them. Setting `enabled: false` reproduces
 the homogeneous runs exactly. `run_rule_based.py` writes the resolved values
 to `thermal_params.csv`.
 
-**Harness** (`src/hems/phase3.py`, `experiments/run_phase3.py`,
-`experiments/calibrate.py`, all settings in `experiment.yaml` -> `phase3:`).
-Each date is simulated twice, once with no CPP and once with one CPP event.
-Only the tariff changes between the two. `analysis/elasticity.py` reports the
-arc elasticity over the CPP window per appliance, per household, pooled, and
-by archetype, for LLM, MILP and noisy-MILP.
+**Harness** (`src/hems/phase3.py`, `src/hems/phase3_report.py`,
+`experiments/run_phase3.py`, `experiments/merge_shards.py`; all settings in
+`experiment.yaml` -> `phase3:`, `llm:`, `thermal_heterogeneity:`,
+`rule_based:`). Four agents: MILP, noisy-MILP, the rule-based satisficer and
+the LLM. Each date is simulated twice, once with no CPP and once with one CPP
+event; only the tariff changes. `phase3.band_mode` is `fixed` (+/-2.0 C for
+everyone, primary) or `persona`. The LLM and the rule-based agent get the same
+WTP scaling: `global_scale` 1.0 x archetype factor (A 1.3 / B 1.0 / C 0.7);
+calibration is disabled. Seeds: LLM 42 only (T=0), noisy-MILP 42-44.
+
+Every run writes per-household raw artifacts (`curves.parquet`, decision
+logs, `scenario.csv`) and derives every summary from them
+(`phase3_report.finalize`): per agent, peak kW + time, PAR, 20:00-20:30 vs
+CPP-window load, comfort degree-hours + max exceedance, flexible and
+whole-household elasticity, daily flexible kWh change. Plus
+`config_resolved.yaml` and `provenance.json` (commit, dirty, branch, time).
 
 **Cost control:**
-- The LLM cache is `results/phase3/llm_cache.jsonl`. It is append-only and
-  keyed on provider, model, temperature, seed and exact prompt, so a re-run
-  makes zero live calls.
+- The LLM cache (`phase3.llm_cache_path`, now `llm_cache_final.jsonl`; override
+  with `--cache-path`) is append-only and keyed on provider, model,
+  temperature, seed, max_output_tokens, response-schema hash and exact prompt,
+  so a re-run makes zero live calls. Entries record the model version the API
+  returned and a timestamp; the decision log carries the model version per call.
 - Washer steps whose outcome Python already fixes (not yet released,
   mid-cycle, done) skip the prompt.
-- `--dry-run` swaps in a stub LLM.
-- `--budget` projects live calls and wall-clock without spending anything.
+- `--dry-run` swaps in a stub LLM and writes `llm_projection.json` (projected
+  live calls against the cache, and the hard upper bound).
 - A live run over more than `live_slice.max_live_households` households
   refuses to start without `--approve-budget`.
+- Retries, backoff, rate limit and model come from `llm:` in experiment.yaml.
+
+**Sharding:** run disjoint `--households` subsets into separate `--out`
+folders (live: separate `--cache-path` files), then merge; the merged
+summaries are identical to an unsharded run (`tests/test_sharding.py`).
 
 ```bash
 python experiments/build_personas.py
-python experiments/run_phase3.py --dry-run --households 8596070,9911140,8632083 --out results/phase3/dryrun_smoke
-python experiments/run_phase3.py --budget                 # projected spend, no calls
-python experiments/run_phase3.py --out results/phase3/live_slice   # 2-household live slice
+python experiments/run_phase3.py --dry-run --out results/phase3/dryrun       # all 24, zero spend
+python experiments/run_phase3.py --dry-run --households 8596070,9911140 --out results/phase3/s1
+python experiments/run_phase3.py --dry-run --households 8211127,10278838 --out results/phase3/s2
+python experiments/merge_shards.py results/phase3/s1 results/phase3/s2 --out results/phase3/merged
 ```
 
 Note: if `import hems` fails in the venv on macOS, the editable-install

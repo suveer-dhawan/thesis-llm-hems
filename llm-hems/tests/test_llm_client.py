@@ -198,3 +198,79 @@ def test_jsonl_cache_second_run_makes_zero_live_calls(tmp_path, monkeypatch):
     for i in range(3):
         second.complete_json(f"prompt {i}", HVACWTPResponse)
     assert second.stats == {"live_calls": 0, "cache_hits": 3}
+
+
+def test_cache_key_includes_schema_hash_and_max_output_tokens(tmp_path, monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    from hems.llm.schemas import WasherWTPResponse
+
+    path = tmp_path / "cache.jsonl"
+    a = LLMClient(provider="gemini", max_output_tokens=2048, cache_path=path)
+    b = LLMClient(provider="gemini", max_output_tokens=1024, cache_path=path)
+    assert a.cache_key("p", HVACWTPResponse) != b.cache_key("p", HVACWTPResponse)
+    assert a.cache_key("p", HVACWTPResponse) != a.cache_key("p", WasherWTPResponse)
+    assert a.cache_key("p", HVACWTPResponse) == a.cache_key("p", HVACWTPResponse)
+
+
+def test_cache_entry_stores_model_version_and_timestamp(tmp_path, monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    import json
+
+    from hems.llm import client as client_module
+
+    def fake_call(self, prompt, schema):
+        self.last_model_version = "gemini-3.5-flash-lite-001"
+        return _fake_hvac_payload()
+
+    monkeypatch.setattr(client_module._GeminiBackend, "call", fake_call)
+    path = tmp_path / "cache.jsonl"
+    c = LLMClient(provider="gemini", cache_path=path)
+    c.complete_json("p", HVACWTPResponse)
+    assert c.last_call["model_version"] == "gemini-3.5-flash-lite-001"
+    assert c.last_call["cached"] is False
+    entry = json.loads(path.read_text().splitlines()[0])
+    assert entry["model_version"] == "gemini-3.5-flash-lite-001"
+    assert entry["timestamp"].endswith("+00:00")
+
+    client_module._DiskCache._instances.clear()  # new process: metadata survives the reload
+    c2 = LLMClient(provider="gemini", cache_path=path)
+    _, cached = c2.complete_json("p", HVACWTPResponse)
+    assert cached and c2.last_call["model_version"] == "gemini-3.5-flash-lite-001"
+    assert c2.model_versions_seen == {"gemini-3.5-flash-lite-001": 1}
+
+
+def test_build_llm_client_reads_retries_backoff_and_provider_settings(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    from hems.llm.client import build_llm_client
+
+    cfg = {
+        "temperature": 0.0,
+        "seed": 42,
+        "max_retries": 5,
+        "backoff": {"base_s": 0.5, "max_s": 4.0, "rate_limited_min_s": 30.0},
+        "gemini": {"model": "m-x", "rate_limit_rpm": 9, "max_output_tokens": 777},
+    }
+    c = build_llm_client("gemini", cfg, None, seed=43)
+    assert c.settings["max_retries"] == 5
+    assert c.settings["backoff"] == cfg["backoff"]
+    assert c.settings["rate_limit_rpm"] == 9
+    assert c.settings["model"] == "m-x"
+    assert c.settings["max_output_tokens"] == 777
+    assert c.settings["seed"] == 43
+
+
+def test_retry_backoff_follows_config(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    from hems.llm import client as client_module
+
+    sleeps = []
+    monkeypatch.setattr(client_module.time, "sleep", sleeps.append)
+
+    def failing(self, p, s):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(client_module._GeminiBackend, "call", failing)
+    c = LLMClient(provider="gemini", max_retries=3, backoff={"base_s": 1.0, "max_s": 3.0})
+    with pytest.raises(LLMError):
+        c.complete_json("p", HVACWTPResponse)
+    assert sleeps == [1.0, 2.0, 3.0]

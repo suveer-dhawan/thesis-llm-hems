@@ -51,6 +51,7 @@ from hems.analysis.metrics import (  # noqa: E402
 )
 from hems.environment.simulator import RunResult, run_simulation  # noqa: E402
 from hems.phase3 import Phase3Config, Phase3Runner  # noqa: E402
+from hems.provenance import write_provenance  # noqa: E402
 
 OUT = Path("results/phase3/rule_based")
 AGENTS = ("milp", "noisy_milp", "rule_based")
@@ -223,11 +224,13 @@ def main() -> None:
     args = parser.parse_args()
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
+    write_provenance(out)
     modes = args.band_modes.split(",")
     if unknown := set(modes) - set(BAND_MODES):
         parser.error(f"unknown band modes {sorted(unknown)}")
 
-    cfg = Phase3Config.from_yaml()
+    # persona: this script applies each band mode itself on top of runner.env()
+    cfg = Phase3Config.from_yaml(band_mode="persona")
     if args.no_thermal_heterogeneity:
         cfg = replace(cfg, thermal=replace(cfg.thermal, enabled=False))
     runner = Phase3Runner(cfg)

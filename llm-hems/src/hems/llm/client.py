@@ -33,9 +33,13 @@ normally set via `config/experiment.yaml`'s `llm.provider`):
 
 Exposes one operation per client: `complete_json(prompt, schema) ->
 (parsed, was_cached)`, with a disk-backed cache keyed on `(provider, model,
-temperature, seed, prompt)` (§15 cost guard -- an identical call is never
-re-sent, and a different provider, model, or seed can't collide on a stale
-entry; Phase 3's multi-seed spread depends on the seed being in the key).
+temperature, seed, max_output_tokens, response-schema hash, prompt)` (§15
+cost guard -- an identical call is never re-sent, and a different provider,
+model, seed, token budget or response schema can't collide on a stale entry;
+Phase 3's multi-seed spread depends on the seed being in the key). Each
+entry also stores the model version the API reported and a UTC timestamp;
+`LLMClient.last_call` exposes both for the call just made (cached or live)
+so the agent logs the model version per decision.
 A `.jsonl` cache path is append-only and shared by every client in the
 process that names the same file, so re-runs cost zero live calls; a legacy
 `.json` path is still read and rewritten whole. `LLMClient.stats` counts
@@ -43,7 +47,9 @@ live calls vs cache hits. The Gemini rate-limit throttle is shared across
 all clients for the same model, so building one client per seed can't
 exceed the per-minute quota. Transient API errors and schema-validation
 failures (§1 pydantic contract) get a bounded retry with exponential
-backoff. `LLMClient.model_id` /
+backoff. Retries, backoff, timeouts, rate limit and model come from
+experiment.yaml's `llm:` block via `build_llm_client`; the module
+constants below are only the fallbacks for a bare `LLMClient(...)`. `LLMClient.model_id` /
 `.sdk_version` let callers record which exact backend produced a run's
 results (BUILD_SPEC.md design principle §3 -- every run writes its resolved
 config).
@@ -53,6 +59,7 @@ from __future__ import annotations
 
 import abc
 import asyncio
+import datetime as dt
 import hashlib
 import importlib.metadata
 import json
@@ -95,6 +102,15 @@ DEFAULT_GEMINI_MAX_OUTPUT_TOKENS = 2048  # generous: gemini-3.x "thinking" eats 
 # threaded into GenerateContentConfig below.
 DEFAULT_GEMINI_TEMPERATURE = 0.0
 DEFAULT_GEMINI_SEED = 42
+DEFAULT_MAX_RETRIES = 2
+DEFAULT_TIMEOUT_S = 60.0
+DEFAULT_BACKOFF = {"base_s": 1.0, "max_s": 8.0, "rate_limited_min_s": 20.0}
+
+
+def schema_hash(schema: Type[BaseModel]) -> str:
+    """Short stable hash of a response schema's JSON Schema (part of the cache key)."""
+    blob = json.dumps(schema.model_json_schema(), sort_keys=True).encode("utf-8")
+    return hashlib.sha256(blob).hexdigest()[:16]
 
 
 class LLMError(RuntimeError):
@@ -105,6 +121,9 @@ class _Backend(abc.ABC):
     """One provider's structured-output call, isolated from caching/retry."""
 
     name: str
+    # Model version the API reported for the most recent `call` (None if the
+    # provider doesn't report one).
+    last_model_version: str | None = None
 
     @abc.abstractmethod
     def call(self, prompt: str, schema: Type[BaseModel]) -> dict: ...
@@ -226,6 +245,7 @@ class _GeminiBackend(_Backend):
                 seed=self._seed,
             ),
         )
+        self.last_model_version = getattr(response, "model_version", None)
         if not response.text:
             raise LLMError(
                 f"gemini returned no text (finish_reason="
@@ -244,6 +264,7 @@ class _GeminiBackend(_Backend):
             "model": self._model,
             "temperature": self._temperature,
             "seed": self._seed,
+            "max_output_tokens": self._max_output_tokens,
         }
 
     @property
@@ -257,9 +278,10 @@ class _GeminiBackend(_Backend):
 class _DiskCache:
     """key -> response dict, persisted to disk; one shared instance per path.
 
-    `.jsonl`: append-only, one `{"key", "value"}` object per line -- cheap to
-    write after every live call and safe to grow to tens of thousands of
-    entries. Anything else: the legacy single JSON dict, rewritten whole.
+    `.jsonl`: append-only, one `{"key", "value", "model_version", "timestamp"}`
+    object per line -- cheap to write after every live call and safe to grow
+    to tens of thousands of entries. Anything else: the legacy single JSON
+    dict (value only, no metadata), rewritten whole.
     """
 
     _instances: dict[Path, "_DiskCache"] = {}
@@ -275,21 +297,27 @@ class _DiskCache:
         self.path = path
         self._jsonl = path.suffix == ".jsonl"
         self.data: dict[str, dict] = {}
+        self.meta: dict[str, dict] = {}  # key -> {model_version, timestamp}
         if path.exists():
             if self._jsonl:
                 for line in path.read_text().splitlines():
                     if line.strip():
                         entry = json.loads(line)
                         self.data[entry["key"]] = entry["value"]
+                        self.meta[entry["key"]] = {
+                            "model_version": entry.get("model_version"),
+                            "timestamp": entry.get("timestamp"),
+                        }
             else:
                 self.data = json.loads(path.read_text())
 
-    def put(self, key: str, value: dict) -> None:
+    def put(self, key: str, value: dict, meta: dict) -> None:
         self.data[key] = value
+        self.meta[key] = meta
         self.path.parent.mkdir(parents=True, exist_ok=True)
         if self._jsonl:
             with self.path.open("a") as f:
-                f.write(json.dumps({"key": key, "value": value}) + "\n")
+                f.write(json.dumps({"key": key, "value": value, **meta}) + "\n")
         else:
             self.path.write_text(json.dumps(self.data, indent=2))
 
@@ -298,8 +326,9 @@ class LLMClient:
     """Provider-agnostic structured-output client (BUILD_SPEC.md §14).
 
     Selects a backend (`matilda` | `gemini`) and wraps it with a disk cache
-    keyed on `(provider, model, temperature, seed, prompt)` and a bounded retry with exponential
-    backoff on transient errors or schema-validation failure. Agent code
+    keyed on `(provider, model, temperature, seed, max_output_tokens, schema
+    hash, prompt)` and a bounded retry with exponential backoff on transient
+    errors or schema-validation failure. Agent code
     (`agents/llm_agent.py`) only ever calls `complete_json`; it never touches
     a provider SDK directly.
     """
@@ -309,14 +338,15 @@ class LLMClient:
         provider: str = "matilda",
         api_key: str | None = None,
         cache_path: str | Path | None = None,
-        max_retries: int = 2,
+        max_retries: int = DEFAULT_MAX_RETRIES,
         base_url: str = DEFAULT_MATILDA_BASE_URL,
-        timeout_s: float = 60.0,
+        timeout_s: float = DEFAULT_TIMEOUT_S,
         model: str = DEFAULT_GEMINI_MODEL,
         rate_limit_rpm: int = DEFAULT_GEMINI_RATE_LIMIT_RPM,
         max_output_tokens: int = DEFAULT_GEMINI_MAX_OUTPUT_TOKENS,
         temperature: float = DEFAULT_GEMINI_TEMPERATURE,
         seed: int = DEFAULT_GEMINI_SEED,
+        backoff: dict | None = None,
     ):
         if provider not in PROVIDERS:
             raise LLMError(f"unknown provider '{provider}' -- choose one of {PROVIDERS}")
@@ -328,10 +358,25 @@ class LLMClient:
             self._backend = _GeminiBackend(
                 api_key, model, rate_limit_rpm, max_output_tokens, temperature, seed
             )
-        self._max_retries = max_retries
-        self._disk = _DiskCache.for_path(Path(cache_path)) if cache_path else None
+        self._max_retries = int(max_retries)
+        self._backoff = {**DEFAULT_BACKOFF, **(backoff or {})}
+        self.cache_path = Path(cache_path) if cache_path else None
+        self._disk = _DiskCache.for_path(self.cache_path) if cache_path else None
         self._cache: dict[str, dict] = self._disk.data if self._disk else {}
+        self._meta: dict[str, dict] = self._disk.meta if self._disk else {}
         self.stats = {"live_calls": 0, "cache_hits": 0}
+        # {model_version, timestamp, cached} for the most recent complete_json.
+        self.last_call: dict = {}
+        self.model_versions_seen: dict[str, int] = {}  # model_version -> decisions served
+        self.settings = {
+            "provider": provider,
+            **self._backend.cache_identity(),
+            "max_retries": self._max_retries,
+            "backoff": self._backoff,
+            "timeout_s": timeout_s,
+            "rate_limit_rpm": rate_limit_rpm if provider == "gemini" else None,
+            "cache_path": str(cache_path) if cache_path else None,
+        }
 
     @property
     def model_id(self) -> str:
@@ -341,25 +386,36 @@ class LLMClient:
     def sdk_version(self) -> str:
         return self._backend.sdk_version
 
-    def cache_key(self, prompt: str) -> str:
+    def cache_key(self, prompt: str, schema: Type[BaseModel]) -> str:
         """Exact-prompt key, scoped to everything else that changes the answer.
 
         Any change to the context (indoor temp, clock, deadline, ...) that a
         template renders into the prompt busts the cache; so does a different
-        provider, model, temperature, or seed.
+        provider, model, temperature, seed, max_output_tokens, or response
+        schema (its field descriptions reach the model too).
         """
-        identity = {**self._backend.cache_identity(), "prompt": prompt}
+        identity = {
+            **self._backend.cache_identity(),
+            "schema": schema_hash(schema),
+            "prompt": prompt,
+        }
         return hashlib.sha256(json.dumps(identity, sort_keys=True).encode("utf-8")).hexdigest()
 
-    def is_cached(self, prompt: str) -> bool:
-        return self.cache_key(prompt) in self._cache
+    def is_cached(self, prompt: str, schema: Type[BaseModel]) -> bool:
+        return self.cache_key(prompt, schema) in self._cache
+
+    def _record(self, meta: dict, cached: bool) -> None:
+        self.last_call = {**meta, "cached": cached}
+        v = str(meta.get("model_version"))
+        self.model_versions_seen[v] = self.model_versions_seen.get(v, 0) + 1
 
     def complete_json(self, prompt: str, schema: Type[T]) -> tuple[T, bool]:
-        """Returns `(parsed_response, was_cached)`."""
-        key = self.cache_key(prompt)
+        """Returns `(parsed_response, was_cached)`; see `last_call` for the model version."""
+        key = self.cache_key(prompt, schema)
         cached = self._cache.get(key)
         if cached is not None:
             self.stats["cache_hits"] += 1
+            self._record(self._meta.get(key, {"model_version": None, "timestamp": None}), True)
             return schema.model_validate(cached), True
 
         last_error: Exception | None = None
@@ -368,10 +424,16 @@ class LLMClient:
                 self.stats["live_calls"] += 1
                 raw = self._backend.call(prompt, schema)
                 parsed = schema.model_validate(raw)
+                meta = {
+                    "model_version": self._backend.last_model_version,
+                    "timestamp": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+                }
                 if self._disk is not None:
-                    self._disk.put(key, parsed.model_dump())
+                    self._disk.put(key, parsed.model_dump(), meta)
                 else:
                     self._cache[key] = parsed.model_dump()
+                    self._meta[key] = meta
+                self._record(meta, False)
                 return parsed, False
             except Exception as exc:  # noqa: BLE001 -- provider raises opaque SDK error types
                 last_error = exc
@@ -381,7 +443,13 @@ class LLMClient:
                     # provider's own retryDelay is typically 15-20s, well
                     # past a plain exponential-backoff ceiling of 8s.
                     is_rate_limited = "RESOURCE_EXHAUSTED" in str(exc) or "429" in str(exc)
-                    sleep_s = max(20, 2**attempt) if is_rate_limited else min(2**attempt, 8)
+                    b = self._backoff
+                    exp = float(b["base_s"]) * 2**attempt
+                    sleep_s = (
+                        max(float(b["rate_limited_min_s"]), exp)
+                        if is_rate_limited
+                        else min(exp, float(b["max_s"]))
+                    )
                     time.sleep(sleep_s)
         raise LLMError(
             f"LLM call failed after {self._max_retries + 1} attempt(s) "
@@ -390,15 +458,28 @@ class LLMClient:
 
 
 def build_llm_client(
-    provider: str, llm_cfg: dict, cache_path: str | Path | None, seed: int | None = None
+    provider: str,
+    llm_cfg: dict,
+    cache_path: str | Path | None,
+    seed: int | None = None,
+    api_key: str | None = None,
 ) -> LLMClient:
     """An `LLMClient` for `provider` from experiment.yaml's `llm:` block.
 
-    Pulls provider-specific settings (model, rate limit, base_url, ...) out of
-    `llm_cfg`. `seed` overrides `llm.seed` (Phase 3's multi-seed spread).
+    Pulls provider-specific settings (model, rate limit, max_output_tokens,
+    base_url, timeout) and the provider-agnostic retry/backoff settings
+    (`llm.max_retries`, `llm.backoff`) out of `llm_cfg`. `seed` overrides
+    `llm.seed` (Phase 3's multi-seed spread). `api_key` overrides the
+    environment (e.g. a placeholder for a client only asked for cache keys).
     """
-    kwargs: dict = {"provider": provider, "cache_path": cache_path}
+    kwargs: dict = {"provider": provider, "cache_path": cache_path, "api_key": api_key}
+    if llm_cfg.get("max_retries") is not None:
+        kwargs["max_retries"] = int(llm_cfg["max_retries"])
+    if llm_cfg.get("backoff"):
+        kwargs["backoff"] = dict(llm_cfg["backoff"])
     provider_cfg = llm_cfg.get(provider) or {}
+    if provider_cfg.get("timeout_s") is not None:
+        kwargs["timeout_s"] = float(provider_cfg["timeout_s"])
     if provider == "gemini":
         for key in ("model", "rate_limit_rpm", "max_output_tokens"):
             if provider_cfg.get(key) is not None:

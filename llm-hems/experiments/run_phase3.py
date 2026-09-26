@@ -1,42 +1,65 @@
 """Phase 3 (elasticity) harness -- BUILD_SPEC.md §10-13.
 
-Steps (select with --steps; all read `phase3:` in config/experiment.yaml):
+Four agents on every household: MILP, noisy-MILP, the rule-based satisficer
+(the LLM agent's halt with a formula WTP) and the LLM. Baseline day (no CPP)
+vs CPP day (`phase3.cpp`), same date, same household.
 
-  calibrate   stratified calibration/held-out split, fit one global wtp_scale
-              on the calibration subset (pre-registered rule), freeze it
-  elasticity  short-run arc elasticity on the CPP window for LLM, MILP and
-              noisy-MILP on the evaluation set (held-out if `calibrate` ran,
-              else every --households id): per household, per appliance,
-              aggregate, and by archetype (tests C > B > A)
-  overlay     four-way load-curve overlay (SGSC base / MILP / noisy-MILP / LLM)
-              per household + population sum; PAR, peak kW, time-of-peak,
-              rebound peak
+Everything comes from `config/experiment.yaml` (`phase3:`, `llm:`,
+`thermal_heterogeneity:`, `rule_based:`):
+
+  band      `phase3.band_mode` fixed (+/-fixed_band_c, primary) | persona;
+            --band-mode overrides
+  scaling   global_scale (1.0) x archetype factor (A 1.3 / B 1.0 / C 0.7),
+            identical for LLM and rule-based; calibration disabled
+  seeds     LLM `llm_seeds` ([42], T=0); noisy-MILP `noisy_milp_seeds`
+            ([42, 43, 44]); MILP + rule-based deterministic
+
+Steps (--steps, default all but calibrate):
+
+  elasticity  every agent, primary seed: short-run arc elasticity on the CPP
+              window, per household / appliance / aggregate / archetype
+  overlay     load-curve overlay (SGSC base + four agents) per household +
+              population; PAR, peak kW, time-of-peak, rebound peak
   scenario    discriminating scenario: one CPP spike + near washer deadline
-  seeds       LLM + noisy-MILP elasticity across phase3.seeds (run-to-run spread)
+              (each agent at its own seeds)
+  seeds       noisy-MILP (and LLM) at every configured seed
+  calibrate   only when phase3.calibration.enabled (it is not, for the final run)
+
+Every run writes raw per-household artifacts (curves.parquet, decision logs,
+scenario.csv, run_meta.json) and derives every summary from them via
+`hems.phase3_report.finalize` -- summary.json/csv (per agent: peak kW + time,
+PAR, 20:00-20:30 vs CPP-window load, degree-hours + max exceedance, flexible
+elasticity, daily flexible kWh change, whole-household elasticity),
+elasticity_*.csv, load_metrics.csv, seed_spread*.csv, report.md -- plus
+config_resolved.yaml and provenance.json.
+
+Sharding: run disjoint --households sets into separate --out folders (and,
+live, separate --cache-path files), then `experiments/merge_shards.py`
+combines them into the same summaries as one unsharded run.
 
 Modes:
 
-  --dry-run   deterministic stub LLM, zero spend (default: all 24 households,
-              all steps)
-  (live)      real LLM through the shared disk cache; defaults to the
-              phase3.live_slice households and `elasticity,overlay`. A live run
-              over more than live_slice.max_live_households households refuses
-              to start without --approve-budget.
-  --budget    no LLM calls: dry-run the full Phase 3 plan over all households,
-              count prompted decisions and distinct prompts, subtract what the
-              disk cache already holds, and report projected live calls and
-              wall-clock at the configured rate limit.
+  --dry-run   deterministic stub LLM, zero spend (default: all 24 households);
+              also writes llm_projection.json -- projected live calls against
+              the configured cache
+  --budget    = --dry-run over all households into results/phase3/budget
+  (live)      real LLM through the disk cache; a run over more than
+              live_slice.max_live_households refuses to start without
+              --approve-budget
 
 Examples:
-  python experiments/run_phase3.py --dry-run --households 8596070,9911140,8632083 \
-      --out results/phase3/dryrun_smoke
-  python experiments/run_phase3.py --out results/phase3/live_slice      # live slice
-  python experiments/run_phase3.py --budget --out results/phase3/budget
+  python experiments/run_phase3.py --dry-run --out results/phase3/dryrun
+  python experiments/run_phase3.py --dry-run --households 8596070,9911140 --out /tmp/s1
+  python experiments/run_phase3.py --households <12 ids> \\
+      --cache-path results/phase3/cache_s1.jsonl --out results/phase3/final/shard1 --approve-budget
+  python experiments/merge_shards.py results/phase3/final/shard1 results/phase3/final/shard2 \\
+      --out results/phase3/final/merged
 """
 
 from __future__ import annotations
 
 import argparse
+import functools
 import json
 import sys
 import time
@@ -45,13 +68,8 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
-from hems.analysis.elasticity import (
-    CONWAY_RANGE,
-    elasticity_table,
-    records_to_frame,
-)
-from hems.analysis.metrics import curve_metrics, rebound_peak_kw
 from hems.analysis.plots import plot_four_way
+from hems.environment.appliances import _clock_to_step
 from hems.environment.tariff import step_to_clock
 from hems.phase3 import (
     AGENTS,
@@ -61,10 +79,19 @@ from hems.phase3 import (
     run_scenario,
     stratified_split,
 )
+from hems.phase3_report import (
+    SERIES,
+    Artifacts,
+    curves_from_runs,
+    finalize,
+    logs_from_runs,
+)
+from hems.provenance import write_provenance
+
+print = functools.partial(print, flush=True)  # noqa: A001 -- progress for long runs
 
 ALL_STEPS = ["calibrate", "elasticity", "overlay", "scenario", "seeds"]
-LIVE_DEFAULT_STEPS = ["elasticity", "overlay"]
-SERIES = {"milp": "MILP", "noisy_milp": "noisy-MILP", "llm": "LLM"}
+DEFAULT_STEPS = ["elasticity", "overlay", "scenario", "seeds"]
 
 
 def _md_table(df: pd.DataFrame, floatfmt: str = "{:.3f}") -> str:
@@ -77,11 +104,11 @@ def _md_table(df: pd.DataFrame, floatfmt: str = "{:.3f}") -> str:
 
 
 # --------------------------------------------------------------------------
-# steps
+# calibration (disabled for the final run; kept for the pre-registered record)
 # --------------------------------------------------------------------------
 
 
-def step_calibrate(runner: Phase3Runner, ids: list[int], out: Path, report: list[str]):
+def step_calibrate(runner: Phase3Runner, ids: list[int], out: Path) -> tuple[float, list[int]]:
     cal = runner.cfg.calibration
     cal_ids, held_ids = stratified_split(
         runner.assignment, ids, float(cal["fraction"]), int(cal["split_seed"])
@@ -91,9 +118,7 @@ def step_calibrate(runner: Phase3Runner, ids: list[int], out: Path, report: list
     summary = {
         "pre_registered": {
             "target_elasticity": cal["target_elasticity"],
-            "conway_range": cal["conway_range"],
-            "rule": "grid value with pooled total elasticity inside the range and closest "
-            "to target on the calibration subset; closest overall if none inside (flagged)",
+            "conway_range": list(runner.cfg.conway_range),
             "scale_grid": cal["scale_grid"],
             "fraction": cal["fraction"],
             "split_seed": cal["split_seed"],
@@ -101,353 +126,119 @@ def step_calibrate(runner: Phase3Runner, ids: list[int], out: Path, report: list
         },
         "calibration_ids": cal_ids,
         "held_out_ids": held_ids,
-        "calibration_archetypes": {h: runner.archetype(h) for h in cal_ids},
-        "held_out_archetypes": {h: runner.archetype(h) for h in held_ids},
         "frozen_wtp_scale": fit.scale,
         "calibration_elasticity_total": fit.elasticity,
         "fit_inside_range": fit.in_range,
     }
     (out / "calibration.json").write_text(json.dumps(summary, indent=2))
-    report += [
-        "## Calibration (pre-registered)",
-        "",
-        f"- target: {cal['target_elasticity']} inside Conway {cal['conway_range']}; "
-        f"split fraction {cal['fraction']} per archetype, split_seed {cal['split_seed']}, "
-        f"fit_seed {cal['fit_seed']}",
-        f"- calibration: {cal_ids}",
-        f"- held-out: {held_ids}",
-        f"- **frozen wtp_scale = {fit.scale}** (calibration total elasticity "
-        f"{fit.elasticity:.3f}, inside range: {fit.in_range})",
-        "",
-        _md_table(fit.grid),
-        "",
-    ]
-    return fit.scale, held_ids
-
-
-def step_elasticity(runner, ids, seed, scale, out: Path, report: list[str]) -> dict:
-    method = runner.cfg.raw["elasticity_method"]
-    records = {a: runner.elasticity_records(ids, a, seed, scale) for a in AGENTS}
-    per_hh = pd.concat([records_to_frame(r, method) for r in records.values()], ignore_index=True)
-    per_hh.to_csv(out / "elasticity_per_household.csv", index=False)
-
-    agg = pd.concat(
-        [elasticity_table(r, "agent", method) for r in records.values()], ignore_index=True
-    )
-    agg_mid = pd.concat(
-        [elasticity_table(r, "agent", "midpoint") for r in records.values()], ignore_index=True
-    )
-    by_arch = pd.concat(
-        [elasticity_table(r, "archetype", method).assign(agent=a) for a, r in records.items()],
-        ignore_index=True,
-    ).sort_values(["agent", "archetype"])
-    agg.to_csv(out / "elasticity_aggregate.csv", index=False)
-    by_arch.to_csv(out / "elasticity_by_archetype.csv", index=False)
-
-    llm_arch = by_arch[by_arch["agent"] == "llm"].set_index("archetype")["elasticity_total"]
-    ordering = {
-        "values": llm_arch.to_dict(),
-        # "more elastic" = more negative
-        "C_more_elastic_than_B": bool(
-            llm_arch.get("C", float("nan")) < llm_arch.get("B", float("nan"))
-        ),
-        "B_more_elastic_than_A": bool(
-            llm_arch.get("B", float("nan")) < llm_arch.get("A", float("nan"))
-        ),
-        "C_more_elastic_than_A": bool(
-            llm_arch.get("C", float("nan")) < llm_arch.get("A", float("nan"))
-        ),
-    }
-    summary = {
-        "households": ids,
-        "seed": seed,
-        "wtp_scale": scale,
-        "method": method,
-        "window": [records["llm"][0].window_start, records["llm"][0].window_end] if ids else None,
-        "p_base": records["llm"][0].p_base if ids else None,
-        "p_cpp": records["llm"][0].p_cpp if ids else None,
-        "conway_range": list(CONWAY_RANGE),
-        "aggregate": agg.to_dict(orient="records"),
-        "aggregate_midpoint": agg_mid.to_dict(orient="records"),
-        "by_archetype": by_arch.to_dict(orient="records"),
-        "llm_archetype_ordering": ordering,
-    }
-    (out / "elasticity_summary.json").write_text(json.dumps(summary, indent=2, default=float))
-
-    show = ["household_id", "agent", "archetype"] + [
-        f"elasticity_{c}" for c in ("hvac", "washer", "flexible", "total")
-    ]
-    report += [
-        f"## Elasticity (seed {seed}, wtp_scale {scale}, method `{method}`)",
-        "",
-        f"Window {summary['window']}; price {summary['p_base']:.3f} -> {summary['p_cpp']:.3f} $/kWh. "
-        f"Conway range {CONWAY_RANGE}. Per-appliance columns are pooled over households; "
-        "`total` is whole-household (base + flexible) and is what the criterion is judged on.",
-        "",
-        "### Aggregate by agent (discriminant check)",
-        "",
-        _md_table(agg),
-        "",
-        "Midpoint-formula robustness:",
-        "",
-        _md_table(agg_mid),
-        "",
-        "### By archetype (prediction: C more elastic than B than A)",
-        "",
-        _md_table(
-            by_arch[
-                ["agent", "archetype", "n"]
-                + [f"elasticity_{c}" for c in ("hvac", "washer", "flexible", "total")]
-            ]
-        ),
-        "",
-        f"LLM ordering: {json.dumps(ordering)}",
-        "",
-        "### Per household",
-        "",
-        _md_table(per_hh[show].sort_values(["agent", "household_id"])),
-        "",
-    ]
-    return summary
-
-
-def step_overlay(runner, ids, seed, scale, out: Path, report: list[str]) -> pd.DataFrame:
-    cpp_start, cpp_end = runner.cfg.cpp_steps
-    reb = runner.cfg.rebound_steps
-    clocks = [step_to_clock(t) for t in range(48)]
-    date = runner.cfg.dates[0]
-    pop = {"base": {}, "cpp": {}}
-    rows = []
-
-    def add_metrics(scope, label, day, curve):
-        m = curve_metrics(curve, clocks)
-        m.update(
-            scope=scope,
-            series=label,
-            day=day,
-            rebound_peak_kw=round(rebound_peak_kw(curve, cpp_end, reb), 3),
-        )
-        rows.append(m)
-
-    for hid in ids:
-        curves = {"base": {}, "cpp": {}}
-        for agent in AGENTS:
-            base, cpp = runner.run_pair(hid, agent, date, seed, scale)
-            curves["base"]["SGSC base"] = base.result.base_load_curve()
-            curves["cpp"]["SGSC base"] = cpp.result.base_load_curve()
-            curves["base"][SERIES[agent]] = base.result.total_load_curve()
-            curves["cpp"][SERIES[agent]] = cpp.result.total_load_curve()
-        for day in ("base", "cpp"):
-            for label, curve in curves[day].items():
-                add_metrics(str(hid), label, day, curve)
-                acc = pop[day].setdefault(label, [0.0] * 48)
-                pop[day][label] = [a + b for a, b in zip(acc, curve)]
-        plot_four_way(
-            curves["base"],
-            curves["cpp"],
-            clocks,
-            (cpp_start, cpp_end),
-            out / f"overlay_{hid}.png",
-            f"household {hid} (archetype {runner.archetype(hid)}) | {date} | seed {seed} | "
-            f"wtp_scale {scale}",
-        )
-    for day in ("base", "cpp"):
-        for label, curve in pop[day].items():
-            add_metrics("population", label, day, curve)
-    plot_four_way(
-        pop["base"],
-        pop["cpp"],
-        clocks,
-        (cpp_start, cpp_end),
-        out / "overlay_population.png",
-        f"population sum ({len(ids)} households) | {date} | seed {seed} | wtp_scale {scale}",
-    )
-    metrics = pd.DataFrame(rows)
-    piv = metrics.pivot_table(index=["scope", "series"], columns="day", values="rebound_peak_kw")
-    metrics = metrics.merge(
-        (piv["cpp"] - piv["base"]).rename("rebound_delta_kw").reset_index(), on=["scope", "series"]
-    )
-    metrics = metrics[
-        [
-            "scope",
-            "series",
-            "day",
-            "par",
-            "peak_kw",
-            "time_of_peak",
-            "rebound_peak_kw",
-            "rebound_delta_kw",
-        ]
-    ]
-    metrics.to_csv(out / "load_metrics.csv", index=False)
-    report += [
-        "## Load-curve metrics (four-way)",
-        "",
-        f"Rebound = peak kW in the {reb} steps after the CPP window ends; delta = CPP day - baseline day.",
-        "",
-        _md_table(metrics[metrics["scope"] == "population"]),
-        "",
-        "Figures: `overlay_population.png`, `overlay_<household>.png`.",
-        "",
-    ]
-    return metrics
-
-
-def step_scenario(runner, ids, scale, out: Path, report: list[str]) -> pd.DataFrame:
-    df = run_scenario(runner, ids, runner.cfg.seeds, scale)
-    df.to_csv(out / "scenario.csv", index=False)
-    summary = df.groupby(["agent", "variant"])["coherent"].agg(["mean", "count"]).reset_index()
-    sc = runner.cfg.raw["scenario"]
-    report += [
-        "## Discriminating scenario (single CPP spike + near washer deadline)",
-        "",
-        f"Spike {sc['spike']['start']}-{sc['spike']['end']} ({sc['spike']['severity']}); variants "
-        + "; ".join(
-            f"{k}: release {v['washer_release']}, deadline {v['washer_deadline']}"
-            for k, v in sc["variants"].items()
-        )
-        + ". Coherence is judged against the scenario's true deadline.",
-        "",
-        _md_table(summary.rename(columns={"mean": "coherent_share"})),
-        "",
-        _md_table(df),
-        "",
-    ]
-    return df
-
-
-def step_seeds(runner, ids, scale, out: Path, report: list[str]) -> pd.DataFrame:
-    from hems.analysis.elasticity import pooled_elasticity
-
-    method = runner.cfg.raw["elasticity_method"]
-    rows = []
-    for agent in ("llm", "noisy_milp"):
-        for seed in runner.cfg.seeds:
-            recs = runner.elasticity_records(ids, agent, seed, scale)
-            rows.append(
-                {
-                    "agent": agent,
-                    "seed": seed,
-                    "elasticity_total": pooled_elasticity(recs, "total", method),
-                    "elasticity_flexible": pooled_elasticity(recs, "flexible", method),
-                    "elasticity_hvac": pooled_elasticity(recs, "hvac", method),
-                    "elasticity_washer": pooled_elasticity(recs, "washer", method),
-                }
-            )
-    df = pd.DataFrame(rows)
-    df.to_csv(out / "seed_spread.csv", index=False)
-    spread = df.groupby("agent")[["elasticity_total", "elasticity_flexible"]].agg(
-        ["min", "max", "std"]
-    )
-    spread.columns = [f"{a}_{b}" for a, b in spread.columns]
-    spread = spread.reset_index()
-    spread.to_csv(out / "seed_spread_summary.csv", index=False)
-    report += [
-        f"## Multi-seed spread (seeds {runner.cfg.seeds}, households {ids})",
-        "",
-        _md_table(df),
-        "",
-        _md_table(spread),
-        "",
-    ]
-    return df
+    print(f"[calibrate] frozen wtp_scale {fit.scale} (inside range: {fit.in_range})")
+    return fit.scale, held_ids or ids
 
 
 # --------------------------------------------------------------------------
-# budget gate
+# simulation -> raw artifacts
 # --------------------------------------------------------------------------
 
 
-def budget(cfg_path: str, out: Path) -> dict:
-    """Projected live calls for the full Phase 3 plan -- no LLM calls made."""
-    runner = Phase3Runner(Phase3Config.from_yaml(cfg_path, dry_run=True))
+def _washer_prompt_bound(runner: Phase3Runner, hid: int, label: str) -> int:
+    """Max washer prompts in one day: every step from release to latest start."""
+    washer = runner.env(hid)[2]
+    variants = runner.cfg.raw["scenario"]["variants"]
+    if label in variants:
+        v = variants[label]
+        release, deadline = (
+            _clock_to_step(v["washer_release"]),
+            _clock_to_step(v["washer_deadline"]),
+        )
+    else:
+        release, deadline = washer.released_step, washer.deadline_step
+    return max(0, deadline - washer.duration_steps - release + 1)
+
+
+def household_overlay(runner: Phase3Runner, hid: int, scale: float, out: Path) -> None:
     cfg = runner.cfg
-    ids = [int(i) for i in runner.assignment["customer_ID"]]
-    cal_ids, held_ids = stratified_split(
-        runner.assignment,
-        ids,
-        float(cfg.calibration["fraction"]),
-        int(cfg.calibration["split_seed"]),
+    date, seed = cfg.dates[0], cfg.primary_seed
+    curves = {"base": {}, "cpp": {}}
+    for agent in AGENTS:
+        base, cpp = runner.run_pair(hid, agent, date, seed, scale)
+        curves["base"]["SGSC base"] = base.result.base_load_curve()
+        curves["cpp"]["SGSC base"] = cpp.result.base_load_curve()
+        curves["base"][SERIES[agent]] = base.result.total_load_curve()
+        curves["cpp"][SERIES[agent]] = cpp.result.total_load_curve()
+    plot_four_way(
+        curves["base"],
+        curves["cpp"],
+        [step_to_clock(t) for t in range(48)],
+        cfg.cpp_steps,
+        out / f"overlay_{hid}.png",
+        f"household {hid} (archetype {runner.archetype(hid)}) | {date} | band {cfg.band_mode} | "
+        f"seed {seed} | global_scale {scale}",
     )
+
+
+def simulate(runner: Phase3Runner, ids: list[int], steps: list[str], scale: float,
+             out: Path) -> Artifacts:  # fmt: skip
+    cfg = runner.cfg
+    primary = cfg.primary_seed
+    scenario_rows = []
     t0 = time.time()
-    fit = fit_scale(runner, cal_ids)
-    for seed in cfg.seeds:
-        runner.elasticity_records(ids, "llm", seed, fit.scale)
-    run_scenario(runner, ids, [cfg.fit_seed], fit.scale)
-    sim_s = time.time() - t0
-
-    llm_runs = [r for r in runner.runs if r.agent == "llm"]
-    prompted = sum(r.prompted for r in llm_runs)
-    by_appliance = {"hvac": 0, "washer": 0}
-    unique: set[tuple[int, str]] = set()
-    for r in llm_runs:
-        p = r.llm_log[~r.llm_log["forced"]]
-        for app, n in p["appliance"].value_counts().items():
-            by_appliance[app] += int(n)
-        unique.update((r.seed, prompt) for prompt in p["prompt"])
-
-    already_cached = None
-    cache_note = ""
-    try:
-        live_runner = Phase3Runner(Phase3Config.from_yaml(cfg_path, dry_run=False))
-        already_cached = sum(
-            1 for seed, prompt in unique if live_runner.client(seed).is_cached(prompt)
+    for i, hid in enumerate(ids, 1):
+        if "elasticity" in steps or "overlay" in steps:
+            for agent in AGENTS:
+                for date in cfg.dates:
+                    runner.run_pair(hid, agent, date, primary, scale)
+        if "seeds" in steps:
+            for agent in ("noisy_milp", "llm"):
+                for seed in cfg.seeds_for(agent):
+                    for date in cfg.dates:
+                        runner.run_pair(hid, agent, date, seed, scale)
+        if "overlay" in steps:
+            household_overlay(runner, hid, scale, out)
+        if "scenario" in steps:
+            scenario_rows.append(
+                run_scenario(runner, [hid], scale, {a: cfg.seeds_for(a) for a in AGENTS})
+            )
+        stats = runner.llm_call_stats()
+        print(
+            f"[{i}/{len(ids)}] household {hid} done -- LLM prompted "
+            f"{stats['prompted_decisions']}, live {stats['live_calls_this_process']} "
+            f"({time.time() - t0:.0f}s)"
         )
-    except Exception as exc:  # noqa: BLE001 -- no key etc: report without the cache credit
-        cache_note = f"cache check skipped: {exc}"
 
-    days = 2 * len(cfg.dates)
-    n_grid = len(cfg.calibration["scale_grid"])
-    n_var = len(cfg.raw["scenario"]["variants"])
-    per_day = 2 * 48
-    upper = {
-        "calibration": per_day * days * n_grid * len(cal_ids),
-        "evaluation_all_seeds": per_day * days * len(cfg.seeds) * len(ids),
-        "scenario": per_day * n_var * len(ids),
+    idset = set(ids)
+    runs = [
+        r
+        for r in runner.runs
+        if r.household_id in idset
+        and (r.agent not in ("llm", "rule_based") or r.wtp_scale == scale)
+    ]
+    day_runs = [r for r in runs if r.label in ("base", "cpp")]
+    orientation = runner.assignment.set_index("customer_ID")["comfort_orientation"].to_dict()
+    llm_runs = [r for r in runs if r.agent == "llm"]
+    stats = runner.llm_call_stats()
+    meta = {
+        "households": ids,
+        "steps": steps,
+        "llm_prompted_decisions": sum(r.prompted for r in llm_runs),
+        "llm_live_calls": sum(r.live_calls for r in llm_runs),
+        "llm_model_versions": {
+            str(k): v for k, v in (stats.get("model_versions_by_seed") or {}).items()
+        },
+        "llm_prompt_upper_bound": sum(
+            48 + _washer_prompt_bound(runner, r.household_id, r.label) for r in llm_runs
+        ),
+        "llm_client_stats_by_seed": {
+            str(k): v for k, v in (stats.get("client_stats_by_seed") or {}).items()
+        },
     }
-    upper_total = sum(upper.values())
-    est_live = len(unique) - (already_cached or 0)
-    rpm = float((cfg.llm_cfg.get("gemini") or {}).get("rate_limit_rpm", 5))
-    result = {
-        "plan": {
-            "households": len(ids),
-            "calibration_households": len(cal_ids),
-            "held_out_households": len(held_ids),
-            "dates": [d.isoformat() for d in cfg.dates],
-            "simulated_days_per_household_per_seed": days,
-            "seeds": cfg.seeds,
-            "scale_grid": cfg.calibration["scale_grid"],
-            "scenario_variants": n_var,
-            "appliances": 2,
-            "steps_per_day": 48,
-        },
-        "formula_upper_bound": {
-            "formula": "2 appliances x 48 steps x (days x grid x n_cal + days x seeds x N + variants x N)",
-            "terms": upper,
-            "total": upper_total,
-        },
-        "dry_run_projection": {
-            "prompted_decisions": prompted,
-            "prompted_by_appliance": by_appliance,
-            "distinct_prompts": len(unique),
-            "already_in_disk_cache": already_cached,
-            "cache_note": cache_note,
-            "projected_live_calls": est_live,
-            "caveat": "counted on the dry-run stub's trajectories; the real LLM's decisions "
-            "change which states (and so which prompts) occur. Treat as an estimate; the "
-            "formula bound is the hard ceiling.",
-        },
-        "wall_clock_at_rate_limit": {
-            "rate_limit_rpm": rpm,
-            "projected_hours": round(est_live / rpm / 60, 1),
-            "upper_bound_hours": round(upper_total / rpm / 60, 1),
-        },
-        "dry_run_simulation_seconds": round(sim_s, 1),
-        "dry_run_fitted_scale_used": fit.scale,
-    }
-    out.mkdir(parents=True, exist_ok=True)
-    (out / "budget.json").write_text(json.dumps(result, indent=2))
-    return result
+    return Artifacts(
+        curves=curves_from_runs(day_runs, runner.archetype, orientation.get),
+        personas=runner.assignment[runner.assignment["customer_ID"].isin(ids)],
+        meta=meta,
+        scenario=pd.concat(scenario_rows, ignore_index=True) if scenario_rows else None,
+        llm_log=logs_from_runs(runs, "llm_log"),
+        rule_log=logs_from_runs(runs, "rule_log"),
+    )
 
 
 # --------------------------------------------------------------------------
@@ -455,134 +246,116 @@ def budget(cfg_path: str, out: Path) -> dict:
 # --------------------------------------------------------------------------
 
 
-def main() -> None:
+def resolved_config(cfg: Phase3Config, runner: Phase3Runner, ids, steps, scale, out) -> dict:
+    res = cfg.resolved()
+    res["wtp_scaling"]["global_scale"] = scale
+    res["run"] = {
+        "households": ids,
+        "steps": steps,
+        "out": str(out),
+        "cache_paths": [cfg.raw["llm_cache_path"]],
+    }
+    if not cfg.dry_run:
+        # the settings each seed's client actually resolved (retries, backoff, rpm, ...)
+        res["llm_clients"] = {s: runner.client(s).settings for s in cfg.llm_seeds}
+    return res
+
+
+def main(argv: list[str] | None = None) -> Path:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument("--config", default="config/experiment.yaml")
     parser.add_argument("--dry-run", action="store_true", help="stub LLM, zero spend")
     parser.add_argument(
-        "--budget", action="store_true", help="report projected live calls and exit"
+        "--budget", action="store_true", help="dry run over all households -> results/phase3/budget"
     )
     parser.add_argument("--households", default=None, help="comma-separated customer_IDs")
-    parser.add_argument("--steps", default=None, help=f"comma-separated subset of {ALL_STEPS}")
     parser.add_argument(
-        "--scale",
-        type=float,
+        "--steps",
         default=None,
-        help="global wtp_scale when not calibrating (default: phase3.wtp_scaling.global_scale)",
+        help=f"comma-separated subset of {ALL_STEPS} (default {DEFAULT_STEPS})",
     )
-    parser.add_argument("--seed", type=int, default=None, help="seed for elasticity/overlay")
+    parser.add_argument(
+        "--band-mode", choices=["fixed", "persona"], default=None, help="override phase3.band_mode"
+    )
+    parser.add_argument(
+        "--cache-path",
+        default=None,
+        help="override phase3.llm_cache_path (one file per live shard)",
+    )
+    parser.add_argument(
+        "--no-thermal-heterogeneity",
+        action="store_true",
+        help="override thermal_heterogeneity.enabled to false",
+    )
     parser.add_argument("--out", default=None)
     parser.add_argument(
         "--approve-budget",
         action="store_true",
         help="allow a live run over more than live_slice.max_live_households",
     )
-    args = parser.parse_args()
-
+    args = parser.parse_args(argv)
     if args.budget:
-        out = Path(args.out or "results/phase3/budget")
-        print(json.dumps(budget(args.config, out), indent=2))
-        return
+        args.dry_run = True
+        args.households = None
+        args.out = args.out or "results/phase3/budget"
 
-    cfg = Phase3Config.from_yaml(args.config, dry_run=args.dry_run)
+    cfg = Phase3Config.from_yaml(
+        args.config,
+        dry_run=args.dry_run,
+        band_mode=args.band_mode,
+        cache_path=args.cache_path,
+        thermal_enabled=False if args.no_thermal_heterogeneity else None,
+    )
     runner = Phase3Runner(cfg)
     live = cfg.raw["live_slice"]
     if args.households:
-        ids = [int(x) for x in args.households.split(",")]
+        ids = sorted(int(x) for x in args.households.split(","))
+        unknown = set(ids) - set(int(i) for i in runner.assignment["customer_ID"])
+        if unknown:
+            parser.error(f"households without a persona assignment: {sorted(unknown)}")
     elif args.dry_run:
-        ids = [int(i) for i in runner.assignment["customer_ID"]]
+        ids = sorted(int(i) for i in runner.assignment["customer_ID"])
     else:
-        ids = [int(i) for i in live["households"]]
-    steps = (
-        args.steps.split(",") if args.steps else (ALL_STEPS if args.dry_run else LIVE_DEFAULT_STEPS)
-    )
-    unknown = set(steps) - set(ALL_STEPS)
-    if unknown:
+        ids = sorted(int(i) for i in live["households"])
+    steps = args.steps.split(",") if args.steps else list(DEFAULT_STEPS)
+    if unknown := set(steps) - set(ALL_STEPS):
         parser.error(f"unknown steps {sorted(unknown)}")
+    if "calibrate" in steps and not cfg.calibration_enabled:
+        parser.error("calibrate requested but phase3.calibration.enabled is false")
+    steps = [s for s in ALL_STEPS if s in steps]
 
     if not args.dry_run and len(ids) > int(live["max_live_households"]) and not args.approve_budget:
         print(
             f"[budget gate] refusing a live run over {len(ids)} households "
             f"(> live_slice.max_live_households={live['max_live_households']}). "
-            "Run `--budget` first and re-run with --approve-budget once approved.",
+            "Run --dry-run first (llm_projection.json) and re-run with --approve-budget.",
             file=sys.stderr,
         )
         sys.exit(2)
 
     out = Path(args.out or ("results/phase3/dryrun" if args.dry_run else "results/phase3/live"))
     out.mkdir(parents=True, exist_ok=True)
-    seed = (
-        args.seed
-        if args.seed is not None
-        else (cfg.fit_seed if args.dry_run else int(live["seed"]))
-    )
-    (out / "config_resolved.yaml").write_text(
-        yaml.safe_dump(
-            {
-                "phase3": cfg.raw,
-                "llm": cfg.llm_cfg,
-                "dry_run": args.dry_run,
-                "households": ids,
-                "steps": steps,
-                "seed": seed,
-                "scale_arg": args.scale,
-            },
-            sort_keys=False,
-        )
-    )
-    runner.assignment[runner.assignment["customer_ID"].isin(ids)].to_csv(
-        out / "personas_used.csv", index=False
-    )
-
+    write_provenance(out)
+    scale = cfg.global_scale
     t0 = time.time()
-    report = [
-        f"# Phase 3 run -- {'DRY RUN (stub LLM, numbers are pipeline checks only)' if args.dry_run else 'LIVE'}",
-        "",
-        f"- households: {ids}",
-        f"- steps: {steps}",
-        f"- provider/model: {cfg.llm_cfg.get('provider')} / "
-        f"{(cfg.llm_cfg.get(cfg.llm_cfg.get('provider', ''), {}) or {}).get('model')}",
-        "",
-    ]
-    scale = args.scale if args.scale is not None else cfg.global_scale
     eval_ids = ids
     if "calibrate" in steps:
-        scale, eval_ids = step_calibrate(runner, ids, out, report)
-        if not eval_ids:
-            eval_ids = ids
-            report.append("_held-out subset empty for this household set -- evaluating on all._\n")
-    if "elasticity" in steps:
-        step_elasticity(runner, eval_ids, seed, scale, out, report)
-    if "overlay" in steps:
-        step_overlay(runner, eval_ids, seed, scale, out, report)
-    if "scenario" in steps:
-        step_scenario(runner, ids, scale, out, report)
-    if "seeds" in steps:
-        step_seeds(runner, ids, scale, out, report)
+        scale, eval_ids = step_calibrate(runner, ids, out)
 
-    stats = runner.llm_call_stats()
-    stats["wall_seconds"] = round(time.time() - t0, 1)
-    (out / "call_stats.json").write_text(json.dumps(stats, indent=2))
-    logs = []
-    for r in runner.runs:
-        if r.llm_log is not None:
-            logs.append(
-                r.llm_log.assign(
-                    household_id=r.household_id,
-                    seed=r.seed,
-                    run_label=r.label,
-                    run_date=r.date.isoformat(),
-                    run_wtp_scale=r.wtp_scale,
-                )
-            )
-    if logs:
-        pd.concat(logs, ignore_index=True).to_parquet(out / "llm_decision_log.parquet")
-    report += ["## LLM call accounting", "", "```", json.dumps(stats, indent=2), "```", ""]
-    (out / "report.md").write_text("\n".join(report))
-    print("\n".join(report))
-    print(f"[run_phase3] wrote {out}/")
+    resolved = resolved_config(cfg, runner, eval_ids, steps, scale, out)
+    (out / "config_resolved.yaml").write_text(yaml.safe_dump(resolved, sort_keys=False))
+    print(
+        f"[run_phase3] {'DRY RUN' if cfg.dry_run else 'LIVE'} | {len(eval_ids)} households | "
+        f"steps {steps} | band {cfg.band_mode} | scale {scale} | cache {cfg.raw['llm_cache_path']}"
+    )
+    artifacts = simulate(runner, eval_ids, steps, scale, out)
+    artifacts.meta["wall_seconds"] = round(time.time() - t0, 1)
+    finalize(out, artifacts, resolved)
+    print((out / "report.md").read_text())
+    print(f"[run_phase3] wrote {out}/ ({artifacts.meta['wall_seconds']}s)")
+    return out
 
 
 if __name__ == "__main__":

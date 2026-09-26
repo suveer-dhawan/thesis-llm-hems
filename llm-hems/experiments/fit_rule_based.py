@@ -20,6 +20,15 @@ the halt and on global_scale, not on the LLM's valuation).
       1 - slack / slack_0, with slack parsed from the prompt and slack_0 from
       the household's persona window.
 
+  HVAC k[orientation], fixed band mode  <- every distinct prompt whose band is
+      +/-2.0 (ceiling 26.0) in the union of the persona-band sweep log and
+      `results/phase3/comfort_sweep/fixed_band_2/live/sweep_llm_log.parquet`
+      (the fixed +/-2.0 sweep: prioritising + flexible households; balanced
+      households are already at +/-2.0 in the persona sweep). Needed because
+      the band shown in the prompt moves the LLM's WTP per degree over the
+      ceiling (prioritising 2.71 -> 3.79, flexible 0.51 -> 0.66); the archetype
+      factor does not enter (the regressand is raw, pre-factor WTP).
+
 Writes `results/phase3/rule_based/fit.json`. The values used by runs are the
 ones frozen in `config/experiment.yaml` -> `rule_based:` (copied from this
 output, rounded to 3 dp); this script only re-derives and reports them.
@@ -39,9 +48,12 @@ import pandas as pd
 from hems.agents.rule_based_agent import RuleBasedParams, fit_through_origin, washer_urgency
 from hems.environment.appliances import _clock_to_step
 from hems.environment.persona import load_assignment
+from hems.provenance import write_provenance
 
 SWEEP_LOG = Path("results/phase3/comfort_sweep/live/sweep_llm_log.parquet")
 SLICE_LOG = Path("results/phase3/live_slice/llm_decision_log.parquet")
+FIXED_SWEEP_LOG = Path("results/phase3/comfort_sweep/fixed_band_2/live/sweep_llm_log.parquet")
+FIXED_BAND_CEILING_C = 26.0  # setpoint 24.0 + 2.0
 OUT = Path("results/phase3/rule_based/fit.json")
 WASHER_DURATION_STEPS = 4  # config/appliances.yaml; the regressor needs slack_0
 
@@ -95,20 +107,39 @@ def fit_washer(log: pd.DataFrame, assignment: pd.DataFrame) -> dict:
 
 def main() -> None:
     assignment = load_assignment()
-    hvac = fit_hvac(pd.read_parquet(SWEEP_LOG))
+    sweep = pd.read_parquet(SWEEP_LOG)
+    hvac = fit_hvac(sweep)
+    both = pd.concat([sweep, pd.read_parquet(FIXED_SWEEP_LOG)], ignore_index=True)
+    hvac_fixed = fit_hvac(both[both["band_hi_c"] == FIXED_BAND_CEILING_C])
     washer = fit_washer(pd.read_parquet(SLICE_LOG), assignment)
     frozen = RuleBasedParams.from_yaml()
+    frozen_fixed = RuleBasedParams.from_yaml(band_mode="fixed")
     result = {
         "method": "least squares through the origin, raw LLM WTP on the rule regressor, "
         "one row per distinct prompt",
         "hvac": {"source": str(SWEEP_LOG), "by_orientation": hvac},
+        "hvac_fixed_band": {
+            "source": [str(SWEEP_LOG), str(FIXED_SWEEP_LOG)],
+            "filter": f"band_hi_c == {FIXED_BAND_CEILING_C} (+/-2.0 band)",
+            "by_orientation": hvac_fixed,
+        },
         "washer": {"source": str(SLICE_LOG), **washer},
-        "frozen_in_config": {"hvac_k": frozen.k_by_orientation, "washer_w_max": frozen.w_max},
+        "frozen_in_config": {
+            "hvac_k": frozen.k_by_orientation,
+            "hvac_k_fixed_band": frozen_fixed.k_by_orientation,
+            "washer_w_max": frozen.w_max,
+        },
     }
-    result["config_matches_fit_to_3dp"] = all(
-        round(hvac[o]["k"], 3) == frozen.k_by_orientation.get(o) for o in hvac
-    ) and round(washer["w_max"], 3) == frozen.w_max
+    result["config_matches_fit_to_3dp"] = (
+        all(round(hvac[o]["k"], 3) == frozen.k_by_orientation.get(o) for o in hvac)
+        and all(
+            round(hvac_fixed[o]["k"], 3) == frozen_fixed.k_by_orientation.get(o)
+            for o in hvac_fixed
+        )
+        and round(washer["w_max"], 3) == frozen.w_max
+    )
     OUT.parent.mkdir(parents=True, exist_ok=True)
+    write_provenance(OUT.parent)
     OUT.write_text(json.dumps(result, indent=2))
     print(json.dumps(result, indent=2))
 

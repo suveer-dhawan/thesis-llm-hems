@@ -99,6 +99,9 @@ def _load_template(name: str) -> string.Template:
 _HVAC_TEMPLATE = _load_template("hvac.txt")
 _SHIFTABLE_TEMPLATE = _load_template("shiftable.txt")
 
+# Response schema per appliance (part of the cache key -- see llm/client.py).
+SCHEMA_BY_APPLIANCE = {"hvac": HVACWTPResponse, "washer": WasherWTPResponse}
+
 
 @dataclass
 class LLMDecisionLogEntry:
@@ -120,6 +123,11 @@ class LLMDecisionLogEntry:
     model_id: str
     sdk_version: str
     misreads: list[str] = field(default_factory=list)
+    # The model version the API reported for this answer (from the cache
+    # entry when cached; None for legacy entries / forced steps), and when
+    # the answer was generated (UTC).
+    model_version: str | None = None
+    response_timestamp: str | None = None
 
 
 class LLMAgent:
@@ -167,17 +175,18 @@ class LLMAgent:
                 return forced
         if appliance_type == "hvac":
             prompt = self._build_hvac_prompt(ctx)
-            schema = HVACWTPResponse
         elif appliance_type == "washer":
             prompt = self._build_washer_prompt(ctx)
-            schema = WasherWTPResponse
         else:
             raise ValueError(f"unknown appliance type: {appliance_type}")
+        schema = SCHEMA_BY_APPLIANCE[appliance_type]
 
         if self._dry_run:
             wtp_response, cached = self._dry_run_response(ctx, schema), False
+            call_meta = {"model_version": "dry_run", "timestamp": None}
         else:
             wtp_response, cached = self._client.complete_json(prompt, schema)
+            call_meta = self._client.last_call
 
         utility, run = satisficing_halt(
             wtp_response.wtp, ctx.cost_now, self.wtp_scale, self.wtp_factor
@@ -204,6 +213,8 @@ class LLMAgent:
                 model_id=self.model_id,
                 sdk_version=self.sdk_version,
                 misreads=misreads,
+                model_version=call_meta.get("model_version"),
+                response_timestamp=call_meta.get("timestamp"),
             )
         )
         return Decision(run=run, wtp=wtp_response.wtp, reason=wtp_response.reason)

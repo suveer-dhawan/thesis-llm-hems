@@ -79,7 +79,7 @@ def test_disabled_is_identity():
 
 
 def test_phase3_runner_applies_config_to_every_agent_env():
-    cfg = Phase3Config.from_yaml(dry_run=True)
+    cfg = Phase3Config.from_yaml(dry_run=True, band_mode="persona")
     assert cfg.thermal.enabled  # config default for this project
     runner = Phase3Runner(cfg)
     assert runner.env(IDS[0])[1] == cfg.thermal.apply(

@@ -26,6 +26,36 @@
       }
     }
   },
+  "hvac_fixed_band": {
+    "source": [
+      "results/phase3/comfort_sweep/live/sweep_llm_log.parquet",
+      "results/phase3/comfort_sweep/fixed_band_2/live/sweep_llm_log.parquet"
+    ],
+    "filter": "band_hi_c == 26.0 (+/-2.0 band)",
+    "by_orientation": {
+      "balanced": {
+        "k": 0.619575,
+        "n_distinct_prompts": 81,
+        "rmse": 0.6607,
+        "r2_vs_mean": 0.2354,
+        "mean_llm_wtp_at_zero_regressor": 0.0462
+      },
+      "comfort_flexible": {
+        "k": 0.660393,
+        "n_distinct_prompts": 30,
+        "rmse": 0.4779,
+        "r2_vs_mean": 0.4421,
+        "mean_llm_wtp_at_zero_regressor": 0.05
+      },
+      "comfort_prioritising": {
+        "k": 3.790761,
+        "n_distinct_prompts": 20,
+        "rmse": 0.4153,
+        "r2_vs_mean": 0.7859,
+        "mean_llm_wtp_at_zero_regressor": 0.1542
+      }
+    }
+  },
   "washer": {
     "source": "results/phase3/live_slice/llm_decision_log.parquet",
     "w_max": 0.888073,
@@ -43,6 +73,11 @@
       "comfort_prioritising": 2.712,
       "balanced": 0.62,
       "comfort_flexible": 0.511
+    },
+    "hvac_k_fixed_band": {
+      "comfort_prioritising": 3.791,
+      "balanced": 0.62,
+      "comfort_flexible": 0.66
     },
     "washer_w_max": 0.888
   },
