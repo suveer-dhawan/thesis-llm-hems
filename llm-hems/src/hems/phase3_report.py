@@ -412,10 +412,12 @@ def llm_projection(
         "rate_limit_rpm": rpm,
         "projected_hours_at_rpm": hours(live),
         "upper_bound_hours_at_rpm": hours(prompt_upper_bound),
-        "caveat": "counted on the dry-run stub's trajectories; the real LLM's decisions change "
-        "which states (so which prompts) occur. HVAC is prompted every step regardless, so the "
-        "estimate is tight for HVAC; the upper bound (every HVAC step + every washer step from "
-        "release to latest start, no cache reuse) is the hard ceiling. Retries not counted.",
+        "caveat": "counted on the dry-run stub's trajectories. The HVAC decision count is "
+        "exact (prompted every step), but which prompts repeat -- across a household's baseline, "
+        "CPP and scenario days until they diverge, and across households that reach the same "
+        "rendered state -- depends on the real LLM's decisions, so the distinct-key count is an "
+        "estimate. The upper bound (every HVAC step + every washer step from release to latest "
+        "start, no cache reuse) is the hard ceiling. Retries not counted.",
     }
 
 
