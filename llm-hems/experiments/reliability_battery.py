@@ -69,6 +69,7 @@ from run_single import build_llm_client, load_environment, load_llm_config
 
 from hems.agents.base import DecisionContext
 from hems.agents.llm_agent import LLMAgent
+from hems.provenance import write_provenance
 
 RESULTS_DIR = Path("results/reliability_battery")
 
@@ -242,6 +243,7 @@ def main() -> None:
     args = parser.parse_args()
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    write_provenance(RESULTS_DIR)
     household, _tariff, hvac_params, washer_params = load_environment()
     hh_ctx = household_ctx(household)
 

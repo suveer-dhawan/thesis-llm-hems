@@ -50,6 +50,7 @@ from run_single import build_llm_client, load_environment, load_llm_config, run_
 
 from hems.agents.base import DecisionContext
 from hems.agents.llm_agent import LLMAgent
+from hems.provenance import write_provenance
 
 RESULTS_DIR = Path("results/phase2_diagnostics")
 LLM_RUN_DIR = Path("results/phase2")
@@ -128,6 +129,7 @@ def comfort_violation_profile(hvac_params) -> dict:
     ax.legend()
     fig.tight_layout()
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    write_provenance(RESULTS_DIR)
     fig.savefig(RESULTS_DIR / "comfort_profile.png", dpi=150)
     plt.close(fig)
 
@@ -308,6 +310,7 @@ def main() -> None:
 
     household, tariff, hvac_params, washer_params = load_environment()
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    write_provenance(RESULTS_DIR)
 
     print("=== 1. comfort-violation profile ===")
     profile = comfort_violation_profile(hvac_params)

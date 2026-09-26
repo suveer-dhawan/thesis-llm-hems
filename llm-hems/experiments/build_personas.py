@@ -36,6 +36,7 @@ from hems.environment.persona import (
     time_weighted_average_rate,
 )
 from hems.environment.tariff import Tariff
+from hems.provenance import write_provenance
 
 MANIFEST = Path("config/household_sample.csv")
 HOUSEHOLDS = Path("data/processed/households.parquet")
@@ -168,6 +169,7 @@ def main() -> None:
     ]
 
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
+    write_provenance(REPORT_DIR)
     (REPORT_DIR / "persona_report.md").write_text("\n".join(md))
     (REPORT_DIR / "persona_report.json").write_text(
         json.dumps(

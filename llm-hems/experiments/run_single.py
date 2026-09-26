@@ -33,6 +33,7 @@ from hems.environment.household import Household
 from hems.environment.simulator import RunResult, run_simulation
 from hems.environment.tariff import Tariff
 from hems.llm.client import build_llm_client  # noqa: F401 -- re-exported for older scripts
+from hems.provenance import write_provenance
 
 AGENT_NAMES = ["stub", "milp", "noisy_milp", "llm"]
 
@@ -125,6 +126,7 @@ def run_agent(
 
 def write_run_outputs(result: RunResult, out_dir: Path, prefix: str) -> dict:
     out_dir.mkdir(parents=True, exist_ok=True)
+    write_provenance(out_dir)
     summary = summary_dict(result)
     (out_dir / f"{prefix}_summary.json").write_text(json.dumps(summary, indent=2))
     result.to_dataframe().to_parquet(out_dir / f"{prefix}_decision_log.parquet")
