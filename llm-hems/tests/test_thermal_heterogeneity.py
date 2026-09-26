@@ -94,6 +94,7 @@ def test_disabled_reproduces_committed_rule_based_run_exactly():
 
     committed = pd.read_csv("results/phase3/rule_based/aggregate_kw.csv")
     cfg = Phase3Config.from_yaml()
+    cfg.raw["washer_enabled"] = True  # the committed run predates the HVAC-only final config
     runner = Phase3Runner(replace(cfg, thermal=replace(cfg.thermal, enabled=False)))
     params = rrb.RuleBasedParams.from_yaml()
     hids = sorted(IDS)

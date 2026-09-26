@@ -122,6 +122,10 @@ class Phase3Config:
         return float(self.raw["fixed_band_c"])
 
     @property
+    def washer_enabled(self) -> bool:
+        return bool(self.raw.get("washer_enabled", True))
+
+    @property
     def llm_seeds(self) -> list[int]:
         return [int(s) for s in self.raw["llm_seeds"]]
 
@@ -177,6 +181,7 @@ class Phase3Config:
                 "applies_to": list(WTP_AGENTS),
                 "calibration_enabled": self.calibration_enabled,
             },
+            "washer_enabled": self.washer_enabled,
             "thermal_heterogeneity": dataclasses.asdict(self.thermal),
             "rule_based": {
                 **(self.full.get("rule_based") or {}),
@@ -255,6 +260,10 @@ class Phase3Runner:
             )
             if self.cfg.band_mode == "fixed":
                 hvac = replace(hvac, tolerance_band_c=self.cfg.fixed_band_c)
+            if not self.cfg.washer_enabled:
+                # A zero-length cycle is complete from step 0: every agent's
+                # washer decision is forced off (no prompt), MILP schedules nothing.
+                washer = replace(washer, duration_steps=0, power_kw=0.0)
             self._envs[household_id] = (household, hvac, washer)
         return self._envs[household_id]
 

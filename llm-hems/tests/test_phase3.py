@@ -93,3 +93,22 @@ def test_seeds_per_agent_follow_config():
     resolved = cfg.resolved()
     for key in ("thermal_heterogeneity", "rule_based", "band", "seeds", "wtp_scaling", "phase3"):
         assert key in resolved
+
+
+def test_washer_disabled_is_hvac_only_and_leaves_hvac_untouched():
+    """phase3.washer_enabled: false -> no washer load or prompts, same HVAC trajectory."""
+    off = Phase3Runner(Phase3Config.from_yaml(dry_run=True))
+    on_cfg = Phase3Config.from_yaml(dry_run=True)
+    on_cfg.raw["washer_enabled"] = True
+    on = Phase3Runner(on_cfg)
+    assert not off.cfg.washer_enabled and on.cfg.washer_enabled
+    date, hid = off.cfg.dates[0], 8596070
+    for agent in ("milp", "noisy_milp", "rule_based", "llm"):
+        for a, b in zip(off.run_pair(hid, agent, date, 42, 1.0), on.run_pair(hid, agent, date, 42, 1.0)):
+            assert all(s.washer_energy_kwh == 0 and not s.washer_on for s in a.result.steps)
+            assert any(s.washer_on for s in b.result.steps)
+            if agent in ("rule_based", "llm"):  # halt-based: HVAC never sees the washer
+                assert [s.hvac_on for s in a.result.steps] == [s.hvac_on for s in b.result.steps]
+            if agent == "llm":
+                prompted = a.llm_log[~a.llm_log["forced"]]
+                assert (prompted["appliance"] == "hvac").all() and a.prompted == 48

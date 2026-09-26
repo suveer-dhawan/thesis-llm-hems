@@ -21,7 +21,8 @@ Steps (--steps, default all but calibrate):
   overlay     load-curve overlay (SGSC base + four agents) per household +
               population; PAR, peak kW, time-of-peak, rebound peak
   scenario    discriminating scenario: one CPP spike + near washer deadline
-              (each agent at its own seeds)
+              (each agent at its own seeds); dropped when
+              phase3.washer_enabled is false (the final run is HVAC-only)
   seeds       noisy-MILP (and LLM) at every configured seed
   calibrate   only when phase3.calibration.enabled (it is not, for the final run)
 
@@ -143,6 +144,8 @@ def step_calibrate(runner: Phase3Runner, ids: list[int], out: Path) -> tuple[flo
 def _washer_prompt_bound(runner: Phase3Runner, hid: int, label: str) -> int:
     """Max washer prompts in one day: every step from release to latest start."""
     washer = runner.env(hid)[2]
+    if washer.duration_steps == 0:  # phase3.washer_enabled: false -- never prompted
+        return 0
     variants = runner.cfg.raw["scenario"]["variants"]
     if label in variants:
         v = variants[label]
@@ -319,9 +322,12 @@ def main(argv: list[str] | None = None) -> Path:
         ids = sorted(int(i) for i in runner.assignment["customer_ID"])
     else:
         ids = sorted(int(i) for i in live["households"])
-    steps = args.steps.split(",") if args.steps else list(DEFAULT_STEPS)
+    default_steps = [s for s in DEFAULT_STEPS if cfg.washer_enabled or s != "scenario"]
+    steps = args.steps.split(",") if args.steps else default_steps
     if unknown := set(steps) - set(ALL_STEPS):
         parser.error(f"unknown steps {sorted(unknown)}")
+    if "scenario" in steps and not cfg.washer_enabled:
+        parser.error("scenario (washer) step requested but phase3.washer_enabled is false")
     if "calibrate" in steps and not cfg.calibration_enabled:
         parser.error("calibrate requested but phase3.calibration.enabled is false")
     steps = [s for s in ALL_STEPS if s in steps]

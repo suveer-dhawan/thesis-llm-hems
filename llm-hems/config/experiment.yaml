@@ -75,9 +75,10 @@ llm:
     # default here. Re-check both models' quotas before a later run.
     model: gemini-3.5-flash-lite
     sdk_version: null              # filled in from the installed package at runtime (llm/client.py)
-    rate_limit_rpm: 5              # observed free-tier cap for this model/key (2026-09-06): the API's
-                                    # own 429 response reported quota=5 req/min, not the commonly-cited
-                                    # 15 -- llm/client.py throttles calls to this before sending.
+    rate_limit_rpm: 1000           # paid-tier limit for this model/key (set 2026-09-26; was 5 on the
+                                    # free tier). llm/client.py throttles calls to this before sending;
+                                    # in practice calls are latency-bound (~38/min sequential in the
+                                    # 2026-09-26 pilot), well under the cap.
     max_output_tokens: 2048        # generous: gemini-3.x "thinking" consumes hidden budget
                                     # before the JSON body -- smaller values truncated responses
                                     # in testing.
@@ -167,6 +168,14 @@ phase3:
   # household (primary: isolates the comfort-orientation wording from the
   # persona-linked band); `persona` = each household's own tolerance_band_c.
   # The comfort orientation is the persona's in both modes.
+  # Washer on/off. false = HVAC-only: the washer becomes a zero-length cycle
+  # (complete from step 0), so no agent is ever prompted for it and MILP
+  # schedules nothing; run_phase3.py drops the washer-only `scenario` step.
+  # Disabled for the final run: the live pilot (results/phase3/pilot_live/)
+  # showed the LLM washer WTP is ~0 until zero slack, so it runs at its latest
+  # start on both days and carries no price response to measure.
+  washer_enabled: false
+
   band_mode: fixed                  # fixed | persona  (run_phase3.py --band-mode overrides)
   fixed_band_c: 2.0
 
