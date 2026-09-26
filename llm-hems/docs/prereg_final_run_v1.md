@@ -47,6 +47,8 @@ Single simulated day; synthetic weather; uniform 2 kW AC imposed on all househol
 3. Per-orientation results with n and bootstrap CIs are post-run analysis on the saved per-household outputs (the harness summarises by archetype).
 4. The $8 cap is a billing limit, not enforced in code; expected spend ≈ $0.25–1.
 5. Arms A and B each require a config/code change and therefore a new tag and a Deviations entry. Arm B needs the current 24's burden tercile cut-offs entered as fixed thresholds. Arm A requires confirming the second model's paid-tier quota first.
+6. The run uses the pinned pilot environment (requirements-lock.txt; Python 3.12.4). requirements.txt at the tag omitted pyarrow and was unpinned; results do not depend on this.
+7. Live mode defaults to a 2-household slice when --households is omitted; the final run passes all 24 IDs and all settings explicitly via ~/launch_final_v1.sh (copied into the results folder after the run). An initial launch on 2026-09-26 was aborted before producing results because of this default; its 3 cache entries were discarded and the cache restored to 191 entries.
 
 ## Deviations
 _None yet._

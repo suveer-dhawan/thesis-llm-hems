@@ -2,6 +2,7 @@
 python-dotenv
 pulp
 pandas
+pyarrow            # pandas parquet engine (curves, decision logs, processed data)
 numpy
 pydantic
 matplotlib
