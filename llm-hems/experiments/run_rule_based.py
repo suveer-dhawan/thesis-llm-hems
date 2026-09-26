@@ -31,7 +31,7 @@ from __future__ import annotations
 import argparse
 import json
 import time
-from dataclasses import replace
+from dataclasses import asdict, replace
 from pathlib import Path
 
 import matplotlib
@@ -44,7 +44,11 @@ from hems.agents.milp_agent import MILPAgent  # noqa: E402
 from hems.agents.noisy_milp_agent import NoisyMILPAgent  # noqa: E402
 from hems.agents.rule_based_agent import RuleBasedParams, RuleBasedSatisficerAgent  # noqa: E402
 from hems.analysis.elasticity import household_elasticity, pooled_elasticity  # noqa: E402
-from hems.analysis.metrics import curve_metrics  # noqa: E402
+from hems.analysis.metrics import (  # noqa: E402
+    curve_metrics,
+    degree_hours_above_ceiling,
+    max_exceedance_c,
+)
 from hems.environment.simulator import RunResult, run_simulation  # noqa: E402
 from hems.phase3 import Phase3Config, Phase3Runner  # noqa: E402
 
@@ -87,18 +91,32 @@ def window_stats(curve: list[float], steps: range) -> dict:
     return {"kwh": round(kwh, 3), "mean_kw": round(kwh * 2 / len(steps), 3)}
 
 
+def distinct_trajectories(results: list[RunResult]) -> int:
+    """Distinct indoor-temp trajectories (to 1e-6 C) across households."""
+    return len({tuple(round(s.indoor_temp_c, 6) for s in r.steps) for r in results})
+
+
 def agent_summary(runs: dict[str, list[RunResult]], cpp: range, post: range, seed: int,
                   archetype) -> dict:  # fmt: skip
     clocks = [s.clock for s in runs["base"][0].steps]
+    first_post = range(post.start, post.start + 1)  # 20:00-20:30
     out: dict = {}
     for label in ("base", "cpp"):
         total = aggregate(runs[label])
         during, after = window_stats(total, cpp), window_stats(total, post)
+        at_2000 = window_stats(total, first_post)
         out[f"{label}_day"] = {
             "aggregate": curve_metrics(total, clocks),
             "cpp_steps_34_39": during,
             "post_cpp_steps_40_43": after,
             "post_over_cpp_mean_kw_ratio": round(after["mean_kw"] / during["mean_kw"], 3),
+            "step_40_2000_2030": at_2000,
+            "step_40_over_cpp_mean_kw_ratio": round(at_2000["mean_kw"] / during["mean_kw"], 3),
+            "distinct_hvac_trajectories": distinct_trajectories(runs[label]),
+            "degree_hours_above_ceiling": round(
+                sum(degree_hours_above_ceiling(r) for r in runs[label]), 3
+            ),
+            "max_exceedance_c": round(max(max_exceedance_c(r) for r in runs[label]), 3),
             "flexible_kwh": round(sum(aggregate(runs[label], "flexible_kwh")), 3),
             "washer_completed": sum(r.washer_completed for r in runs[label]),
             "comfort_violation_steps": sum(r.comfort_violation_steps for r in runs[label]),
@@ -131,11 +149,12 @@ def agent_summary(runs: dict[str, list[RunResult]], cpp: range, post: range, see
     return out
 
 
-def plot(curves: dict, cpp: range, post: range, path: Path) -> None:
+def plot(curves: dict, modes: list[str], cpp: range, post: range, path: Path) -> None:
     ink, muted, grid = "#0b0b0b", "#52514e", "#e4e3df"
-    fig, axes = plt.subplots(2, 2, figsize=(12, 7.5), sharex=True, sharey=True)
+    fig, axes = plt.subplots(len(modes), 2, figsize=(12, 1.0 + 3.25 * len(modes)),
+                             sharex=True, sharey=True, squeeze=False)  # fmt: skip
     x = [t / 2 for t in range(48)]
-    for i, mode in enumerate(BAND_MODES):
+    for i, mode in enumerate(modes):
         for j, label in enumerate(("base", "cpp")):
             ax = axes[i, j]
             ax.axvspan(cpp.start / 2, cpp.stop / 2, color="#d9d8d3", alpha=0.6, lw=0)
@@ -158,17 +177,37 @@ def plot(curves: dict, cpp: range, post: range, path: Path) -> None:
             ax.set_xlim(0, 24)
             if j == 0:
                 ax.set_ylabel("Aggregate load, 24 households (kW)", color=muted, fontsize=9)
-            if i == 1:
+            if i == len(modes) - 1:
                 ax.set_xlabel("Hour of day", color=muted, fontsize=9)
-    axes[0, 1].text(cpp.start / 2 + 0.1, 0.97, "CPP", transform=axes[0, 1].get_xaxis_transform(),
-                    color=muted, fontsize=8, va="top")  # fmt: skip
-    axes[0, 1].text(post.start / 2 + 0.1, 0.97, "post", transform=axes[0, 1].get_xaxis_transform(),
-                    color=muted, fontsize=8, va="top")  # fmt: skip
+    axes[0, 1].text(cpp.start / 2 + 0.1, 0.03, "CPP", transform=axes[0, 1].get_xaxis_transform(),
+                    color=muted, fontsize=8, va="bottom")  # fmt: skip
+    axes[0, 1].text(post.start / 2 + 0.1, 0.03, "post", transform=axes[0, 1].get_xaxis_transform(),
+                    color=muted, fontsize=8, va="bottom")  # fmt: skip
     h, lab = axes[0, 0].get_legend_handles_labels()
     fig.legend(h, lab, loc="upper center", ncol=3, frameon=False, fontsize=10)
-    fig.tight_layout(rect=(0, 0, 1, 0.95))
+    fig.tight_layout(rect=(0, 0, 1, 1 - 0.35 / (1.0 + 3.25 * len(modes))))
     fig.savefig(path, dpi=150)
     plt.close(fig)
+
+
+def thermal_params_table(runner: Phase3Runner, hids: list[int]) -> pd.DataFrame:
+    """The resolved per-household thermal params every agent in this run used."""
+    rows = []
+    for hid in hids:
+        hvac = runner.env(hid)[1]
+        rows.append({
+            "household_id": hid,
+            "comfort_orientation": runner.env(hid)[0].params.comfort_orientation,
+            "heterogeneity_enabled": runner.cfg.thermal.enabled,
+            **runner.cfg.thermal.draws(hid),
+            "r": hvac.r,
+            "c": hvac.c,
+            "rc_hours": hvac.r * hvac.c,
+            "setpoint_c": hvac.setpoint_c,
+            "initial_indoor_temp_c": hvac.start_temp_c,
+            "persona_band_c": hvac.tolerance_band_c,
+        })  # fmt: skip
+    return pd.DataFrame(rows)
 
 
 def main() -> None:
@@ -177,11 +216,21 @@ def main() -> None:
     )
     parser.add_argument("--seed", type=int, default=None, help="noisy-MILP seed (default fit_seed)")
     parser.add_argument("--out", default=str(OUT))
+    parser.add_argument("--band-modes", default=",".join(BAND_MODES),
+                        help="comma-separated subset of: " + ",".join(BAND_MODES))  # fmt: skip
+    parser.add_argument("--no-thermal-heterogeneity", action="store_true",
+                        help="override thermal_heterogeneity.enabled to false")  # fmt: skip
     args = parser.parse_args()
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
+    modes = args.band_modes.split(",")
+    if unknown := set(modes) - set(BAND_MODES):
+        parser.error(f"unknown band modes {sorted(unknown)}")
 
-    runner = Phase3Runner(Phase3Config.from_yaml())
+    cfg = Phase3Config.from_yaml()
+    if args.no_thermal_heterogeneity:
+        cfg = replace(cfg, thermal=replace(cfg.thermal, enabled=False))
+    runner = Phase3Runner(cfg)
     seed = args.seed if args.seed is not None else runner.cfg.fit_seed
     params = RuleBasedParams.from_yaml(runner.cfg.experiment_path)
     cpp_lo, cpp_hi = runner.cfg.cpp_steps
@@ -193,7 +242,8 @@ def main() -> None:
     summary: dict = {}
     curves: dict = {}
     rows = []
-    for mode, band_c in BAND_MODES.items():
+    for mode in modes:
+        band_c = BAND_MODES[mode]
         summary[mode] = {}
         for agent in AGENTS:
             runs = {label: [simulate(runner, params, h, agent, band_c, label, seed) for h in hids]
@@ -218,6 +268,10 @@ def main() -> None:
         "band_modes": {"persona": "own persona tolerance_band_c",
                        "fixed": f"+/-{FIXED_BAND_C} C for every household"},  # fmt: skip
         "noisy_milp_seed": seed,
+        "thermal_heterogeneity": {
+            **asdict(cfg.thermal),
+            "per_household": "thermal_params.csv",
+        },
         "rule_based": {
             "global_scale": GLOBAL_SCALE,
             "archetype_factor": FACTOR,
@@ -236,7 +290,8 @@ def main() -> None:
     pd.DataFrame(
         {f"{m}|{a}|{d}": [round(v * 2, 4) for v in c] for (m, a, d), c in curves.items()}
     ).rename_axis("step").to_csv(out / "aggregate_kw.csv")
-    plot(curves, cpp, post, out / "aggregate_load.png")
+    thermal_params_table(runner, hids).to_csv(out / "thermal_params.csv", index=False)
+    plot(curves, modes, cpp, post, out / "aggregate_load.png")
     print(f"wrote {out}/summary.json, per_household.csv, aggregate_kw.csv, aggregate_load.png "
           f"({result['wall_seconds']}s)")  # fmt: skip
 

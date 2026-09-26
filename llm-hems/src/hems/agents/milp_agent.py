@@ -39,7 +39,7 @@ class MILPAgent:
         self.hvac_params = hvac_params
         self.washer_params = washer_params
         self._initial_temp = (
-            initial_indoor_temp_c if initial_indoor_temp_c is not None else hvac_params.setpoint_c
+            initial_indoor_temp_c if initial_indoor_temp_c is not None else hvac_params.start_temp_c
         )
         true_rates = [tariff.rate_at(t, date).rate for t in range(STEPS_PER_DAY)]
         if price_noise_std > 0.0:

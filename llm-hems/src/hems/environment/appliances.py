@@ -39,6 +39,9 @@ class HVACParams:
     outdoor_max_c: float
     outdoor_peak_hour: float = 15.0  # hour-of-day (0-24) of the daily temperature max
     dt_hours: float = 0.5
+    # Indoor temp at t=0; None = start at the setpoint. Set per household by
+    # persona.apply_thermal_heterogeneity, read by the simulator and the MILP.
+    initial_indoor_temp_c: float | None = None
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> "HVACParams":
@@ -56,6 +59,11 @@ class HVACParams:
             outdoor_max_c=float(h["outdoor_temp_max_c"]),
             outdoor_peak_hour=float(h.get("outdoor_temp_peak_hour", 15.0)),
         )
+
+    @property
+    def start_temp_c(self) -> float:
+        """Indoor temp at t=0: the household's own initial temp, else the setpoint."""
+        return self.setpoint_c if self.initial_indoor_temp_c is None else self.initial_indoor_temp_c
 
     @property
     def band_lo_c(self) -> float:

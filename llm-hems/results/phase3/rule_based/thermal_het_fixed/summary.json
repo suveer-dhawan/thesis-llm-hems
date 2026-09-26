@@ -1,0 +1,273 @@
+{
+  "date": "2013-01-18",
+  "cpp": {
+    "start": "17:00",
+    "end": "20:00",
+    "severity": "moderate"
+  },
+  "cpp_steps": [
+    34,
+    39
+  ],
+  "post_cpp_steps": [
+    40,
+    43
+  ],
+  "households": 24,
+  "band_modes": {
+    "persona": "own persona tolerance_band_c",
+    "fixed": "+/-2.0 C for every household"
+  },
+  "noisy_milp_seed": 42,
+  "thermal_heterogeneity": {
+    "enabled": true,
+    "r_range": [
+      0.8,
+      1.2
+    ],
+    "c_range": [
+      0.8,
+      1.2
+    ],
+    "t0_range": [
+      -1.0,
+      1.0
+    ],
+    "seed": 42,
+    "per_household": "thermal_params.csv"
+  },
+  "rule_based": {
+    "global_scale": 1.0,
+    "archetype_factor": 1.0,
+    "hvac_k": {
+      "comfort_prioritising": 2.712,
+      "balanced": 0.62,
+      "comfort_flexible": 0.511
+    },
+    "washer_w_max": 0.888,
+    "fit": "experiments/fit_rule_based.py -> results/phase3/rule_based/fit.json"
+  },
+  "llm_calls": 0,
+  "units": "aggregate = 24-household sum; kW from 30-min kWh x 2; elasticity pooled (sum kWh then ratio) over the CPP window",
+  "wall_seconds": 16.4,
+  "results": {
+    "fixed": {
+      "milp": {
+        "base_day": {
+          "aggregate": {
+            "par": 1.966,
+            "peak_kw": 109.548,
+            "time_of_peak": "14:30"
+          },
+          "cpp_steps_34_39": {
+            "kwh": 269.128,
+            "mean_kw": 89.709
+          },
+          "post_cpp_steps_40_43": {
+            "kwh": 178.196,
+            "mean_kw": 89.098
+          },
+          "post_over_cpp_mean_kw_ratio": 0.993,
+          "step_40_2000_2030": {
+            "kwh": 42.536,
+            "mean_kw": 85.072
+          },
+          "step_40_over_cpp_mean_kw_ratio": 0.948,
+          "distinct_hvac_trajectories": 24,
+          "degree_hours_above_ceiling": 0.0,
+          "max_exceedance_c": 0.0,
+          "flexible_kwh": 259.4,
+          "washer_completed": 24,
+          "comfort_violation_steps": 0
+        },
+        "cpp_day": {
+          "aggregate": {
+            "par": 2.258,
+            "peak_kw": 129.072,
+            "time_of_peak": "20:00"
+          },
+          "cpp_steps_34_39": {
+            "kwh": 218.128,
+            "mean_kw": 72.709
+          },
+          "post_cpp_steps_40_43": {
+            "kwh": 200.196,
+            "mean_kw": 100.098
+          },
+          "post_over_cpp_mean_kw_ratio": 1.377,
+          "step_40_2000_2030": {
+            "kwh": 64.536,
+            "mean_kw": 129.072
+          },
+          "step_40_over_cpp_mean_kw_ratio": 1.775,
+          "distinct_hvac_trajectories": 24,
+          "degree_hours_above_ceiling": 0.0,
+          "max_exceedance_c": 0.0,
+          "flexible_kwh": 294.4,
+          "washer_completed": 24,
+          "comfort_violation_steps": 0
+        },
+        "post_cpp_rebound_kwh_cpp_minus_base": 22.0,
+        "cpp_window_kwh_cpp_minus_base": -51.0,
+        "elasticity_flexible": {
+          "base": -0.685,
+          "midpoint": -1.8308
+        },
+        "elasticity_total": {
+          "base": -0.1603,
+          "midpoint": -0.2818
+        },
+        "daily_flexible_kwh_change": {
+          "base": 259.4,
+          "cpp": 294.4,
+          "delta_kwh": 35.0,
+          "delta_pct": 13.49
+        }
+      },
+      "noisy_milp": {
+        "base_day": {
+          "aggregate": {
+            "par": 1.957,
+            "peak_kw": 109.548,
+            "time_of_peak": "14:30"
+          },
+          "cpp_steps_34_39": {
+            "kwh": 269.728,
+            "mean_kw": 89.909
+          },
+          "post_cpp_steps_40_43": {
+            "kwh": 175.596,
+            "mean_kw": 87.798
+          },
+          "post_over_cpp_mean_kw_ratio": 0.977,
+          "step_40_2000_2030": {
+            "kwh": 42.136,
+            "mean_kw": 84.272
+          },
+          "step_40_over_cpp_mean_kw_ratio": 0.937,
+          "distinct_hvac_trajectories": 24,
+          "degree_hours_above_ceiling": 0.0,
+          "max_exceedance_c": 0.0,
+          "flexible_kwh": 265.4,
+          "washer_completed": 24,
+          "comfort_violation_steps": 0
+        },
+        "cpp_day": {
+          "aggregate": {
+            "par": 2.193,
+            "peak_kw": 125.188,
+            "time_of_peak": "16:30"
+          },
+          "cpp_steps_34_39": {
+            "kwh": 223.728,
+            "mean_kw": 74.576
+          },
+          "post_cpp_steps_40_43": {
+            "kwh": 191.596,
+            "mean_kw": 95.798
+          },
+          "post_over_cpp_mean_kw_ratio": 1.285,
+          "step_40_2000_2030": {
+            "kwh": 59.136,
+            "mean_kw": 118.272
+          },
+          "step_40_over_cpp_mean_kw_ratio": 1.586,
+          "distinct_hvac_trajectories": 24,
+          "degree_hours_above_ceiling": 0.0,
+          "max_exceedance_c": 0.0,
+          "flexible_kwh": 292.4,
+          "washer_completed": 24,
+          "comfort_violation_steps": 0
+        },
+        "post_cpp_rebound_kwh_cpp_minus_base": 16.0,
+        "cpp_window_kwh_cpp_minus_base": -46.0,
+        "elasticity_flexible": {
+          "base": -0.612,
+          "midpoint": -1.5252
+        },
+        "elasticity_total": {
+          "base": -0.1443,
+          "midpoint": -0.251
+        },
+        "daily_flexible_kwh_change": {
+          "base": 265.4,
+          "cpp": 292.4,
+          "delta_kwh": 27.0,
+          "delta_pct": 10.17
+        }
+      },
+      "rule_based": {
+        "base_day": {
+          "aggregate": {
+            "par": 2.158,
+            "peak_kw": 115.484,
+            "time_of_peak": "17:30"
+          },
+          "cpp_steps_34_39": {
+            "kwh": 285.128,
+            "mean_kw": 95.043
+          },
+          "post_cpp_steps_40_43": {
+            "kwh": 170.796,
+            "mean_kw": 85.398
+          },
+          "post_over_cpp_mean_kw_ratio": 0.899,
+          "step_40_2000_2030": {
+            "kwh": 39.536,
+            "mean_kw": 79.072
+          },
+          "step_40_over_cpp_mean_kw_ratio": 0.832,
+          "distinct_hvac_trajectories": 24,
+          "degree_hours_above_ceiling": 125.783,
+          "max_exceedance_c": 1.638,
+          "flexible_kwh": 206.4,
+          "washer_completed": 24,
+          "comfort_violation_steps": 405
+        },
+        "cpp_day": {
+          "aggregate": {
+            "par": 2.315,
+            "peak_kw": 123.072,
+            "time_of_peak": "20:00"
+          },
+          "cpp_steps_34_39": {
+            "kwh": 254.128,
+            "mean_kw": 84.709
+          },
+          "post_cpp_steps_40_43": {
+            "kwh": 192.796,
+            "mean_kw": 96.398
+          },
+          "post_over_cpp_mean_kw_ratio": 1.138,
+          "step_40_2000_2030": {
+            "kwh": 61.536,
+            "mean_kw": 123.072
+          },
+          "step_40_over_cpp_mean_kw_ratio": 1.453,
+          "distinct_hvac_trajectories": 24,
+          "degree_hours_above_ceiling": 180.204,
+          "max_exceedance_c": 2.51,
+          "flexible_kwh": 198.4,
+          "washer_completed": 24,
+          "comfort_violation_steps": 425
+        },
+        "post_cpp_rebound_kwh_cpp_minus_base": 22.0,
+        "cpp_window_kwh_cpp_minus_base": -31.0,
+        "elasticity_flexible": {
+          "base": -0.332,
+          "midpoint": -0.6572
+        },
+        "elasticity_total": {
+          "base": -0.092,
+          "midpoint": -0.1548
+        },
+        "daily_flexible_kwh_change": {
+          "base": 206.4,
+          "cpp": 198.4,
+          "delta_kwh": -8.0,
+          "delta_pct": -3.88
+        }
+      }
+    }
+  }
+}

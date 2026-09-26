@@ -86,6 +86,22 @@ noisy_milp:
   # relative to clean MILP across seeds on household 8596070 (Part 1b).
   price_noise_std: 0.02
 
+thermal_heterogeneity:
+  # Seeded per-household thermal params (environment/persona.py
+  # ThermalHeterogeneity), applied when the persona environment is built, so
+  # every agent -- MILP (plans with them), noisy-MILP (its jitter on top),
+  # rule-based, LLM -- simulates the same household physics:
+  #   R *= U(r_range), C *= U(c_range) (independent), T_in(0) = setpoint + U(t0_range)
+  # drawn from Random(f"thermal:{seed}:{household_id}"). Outdoor curve, AC kW
+  # and COP stay global. enabled: false reproduces the homogeneous runs exactly.
+  # NOTE for LLM runs: it changes the indoor-temp trajectories and so the
+  # prompts -- earlier llm_cache.jsonl entries won't be hit.
+  enabled: true
+  r_range: [0.8, 1.2]
+  c_range: [0.8, 1.2]
+  t0_range: [-1.0, 1.0]            # degC around the setpoint
+  seed: 42
+
 rule_based:
   # RuleBasedSatisficerAgent (agents/rule_based_agent.py): the LLM agent with
   # the LLM swapped for a formula, same Python halt (U = wtp - cost_now at

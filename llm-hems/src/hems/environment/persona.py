@@ -25,7 +25,8 @@ Phase 3 runner calls to simulate one household under its persona.
 from __future__ import annotations
 
 import datetime as dt
-from dataclasses import replace
+import random
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import pandas as pd
@@ -268,17 +269,85 @@ def apply_persona(
     return hvac_params, washer_params
 
 
+@dataclass(frozen=True)
+class ThermalHeterogeneity:
+    """Seeded per-household thermal draws (`experiment.yaml` -> `thermal_heterogeneity`).
+
+    R and C are scaled by independent Uniform(r_range) / Uniform(c_range)
+    multipliers and the initial indoor temp is setpoint + Uniform(t0_range),
+    all drawn from one RNG seeded on (seed, household_id) -- so a household's
+    draws don't depend on which other households are in the run. Applied in
+    `load_persona_environment`, i.e. before any agent is built: every agent
+    (MILP, noisy-MILP, rule-based, LLM) simulates, and the MILP plans with,
+    the same R, C and initial temp. Outdoor curve, AC kW and COP stay global.
+    Noisy-MILP's comfort/setpoint jitter is applied on top of these params.
+    """
+
+    enabled: bool = False
+    r_range: tuple[float, float] = (1.0, 1.0)
+    c_range: tuple[float, float] = (1.0, 1.0)
+    t0_range: tuple[float, float] = (0.0, 0.0)
+    seed: int = 0
+
+    @classmethod
+    def from_config(cls, cfg: dict | None) -> "ThermalHeterogeneity":
+        if not cfg:
+            return cls()
+        return cls(
+            enabled=bool(cfg["enabled"]),
+            r_range=tuple(float(v) for v in cfg["r_range"]),
+            c_range=tuple(float(v) for v in cfg["c_range"]),
+            t0_range=tuple(float(v) for v in cfg["t0_range"]),
+            seed=int(cfg["seed"]),
+        )
+
+    @classmethod
+    def from_yaml(cls, path: str | Path = "config/experiment.yaml") -> "ThermalHeterogeneity":
+        with open(path) as f:
+            return cls.from_config(yaml.safe_load(f).get("thermal_heterogeneity"))
+
+    def draws(self, household_id: int) -> dict[str, float]:
+        """`{r_mult, c_mult, t0_offset_c}` for one household (identity when disabled)."""
+        if not self.enabled:
+            return {"r_mult": 1.0, "c_mult": 1.0, "t0_offset_c": 0.0}
+        rng = random.Random(f"thermal:{self.seed}:{int(household_id)}")
+        return {
+            "r_mult": rng.uniform(*self.r_range),
+            "c_mult": rng.uniform(*self.c_range),
+            "t0_offset_c": rng.uniform(*self.t0_range),
+        }
+
+    def apply(self, hvac: HVACParams, household_id: int) -> HVACParams:
+        """`hvac` with this household's R, C and initial temp; unchanged when disabled."""
+        if not self.enabled:
+            return hvac
+        d = self.draws(household_id)
+        return replace(
+            hvac,
+            r=hvac.r * d["r_mult"],
+            c=hvac.c * d["c_mult"],
+            initial_indoor_temp_c=hvac.setpoint_c + d["t0_offset_c"],
+        )
+
+
 def load_persona_environment(
     household_id: int,
     assignment: pd.DataFrame,
     appliances_path: str | Path = "config/appliances.yaml",
     household_defaults_path: str | Path = "config/household.yaml",
     load_curves_path: str | Path = DEFAULT_LOAD_CURVES_PATH,
+    thermal: ThermalHeterogeneity | None = None,
 ) -> tuple[Household, HVACParams, WasherParams]:
-    """Household + persona-adjusted HVAC/washer params for one simulation."""
+    """Household + persona-adjusted HVAC/washer params for one simulation.
+
+    `thermal` (default: none) applies the household's seeded R/C/initial-temp
+    draws on top of the persona band.
+    """
     params = persona_household_params(household_id, assignment)
     household = Household(params, load_curves_path)
     hvac = HVACParams.from_yaml(appliances_path)
     washer = WasherParams.from_yaml(appliances_path, household_defaults_path)
     hvac, washer = apply_persona(params, hvac, washer)
+    if thermal is not None:
+        hvac = thermal.apply(hvac, household_id)
     return household, hvac, washer

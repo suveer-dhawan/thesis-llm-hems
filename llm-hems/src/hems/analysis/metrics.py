@@ -64,6 +64,21 @@ def curve_metrics(load_kwh: list[float], clocks: list[str]) -> dict:
     }
 
 
+def degree_hours_above_ceiling(result: RunResult) -> float:
+    """Sum over steps of max(0, indoor - band ceiling) x step length (degC.h).
+
+    Indoor temp is the logged end-of-step value; the ceiling is the run's own
+    (for noisy-MILP, its jittered band).
+    """
+    dt_h = 24 / len(result.steps)
+    return sum(max(0.0, s.indoor_temp_c - result.hvac_band_hi_c) for s in result.steps) * dt_h
+
+
+def max_exceedance_c(result: RunResult) -> float:
+    """Largest indoor overshoot above the band ceiling over the day (degC, 0 if never)."""
+    return max(0.0, max(s.indoor_temp_c for s in result.steps) - result.hvac_band_hi_c)
+
+
 def rebound_peak_kw(load_kwh: list[float], start_step: int, n_steps: int) -> float:
     """Peak kW in the `n_steps` after an event ends (`start_step` = first post-event step).
 

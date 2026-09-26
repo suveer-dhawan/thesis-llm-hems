@@ -138,7 +138,7 @@ def run_simulation(
 ) -> RunResult:
     base_curve = household.base_kwh_for_date(date)
     state = household.new_state(
-        initial_indoor_temp_c if initial_indoor_temp_c is not None else hvac_params.setpoint_c
+        initial_indoor_temp_c if initial_indoor_temp_c is not None else hvac_params.start_temp_c
     )
     household_ctx = {
         "thermal_sensitivity": household.params.thermal_sensitivity,

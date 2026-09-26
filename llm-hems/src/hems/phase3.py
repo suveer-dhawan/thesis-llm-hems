@@ -36,7 +36,11 @@ from hems.agents.noisy_milp_agent import NoisyMILPAgent
 from hems.analysis.elasticity import ElasticityRecord, household_elasticity, pooled_elasticity
 from hems.environment.appliances import HVACParams, WasherParams, _clock_to_step
 from hems.environment.household import Household
-from hems.environment.persona import load_assignment, load_persona_environment
+from hems.environment.persona import (
+    ThermalHeterogeneity,
+    load_assignment,
+    load_persona_environment,
+)
 from hems.environment.simulator import RunResult, run_simulation
 from hems.environment.tariff import Tariff
 from hems.llm.client import LLMClient, build_llm_client
@@ -51,6 +55,7 @@ class Phase3Config:
     llm_cfg: dict
     experiment_path: str
     dry_run: bool
+    thermal: ThermalHeterogeneity = ThermalHeterogeneity()
 
     @classmethod
     def from_yaml(
@@ -58,7 +63,11 @@ class Phase3Config:
     ) -> "Phase3Config":
         cfg = yaml.safe_load(Path(path).read_text())
         return cls(
-            raw=cfg["phase3"], llm_cfg=cfg.get("llm", {}), experiment_path=path, dry_run=dry_run
+            raw=cfg["phase3"],
+            llm_cfg=cfg.get("llm", {}),
+            experiment_path=path,
+            dry_run=dry_run,
+            thermal=ThermalHeterogeneity.from_config(cfg.get("thermal_heterogeneity")),
         )
 
     @property
@@ -135,7 +144,9 @@ class Phase3Runner:
 
     def env(self, household_id: int) -> tuple[Household, HVACParams, WasherParams]:
         if household_id not in self._envs:
-            self._envs[household_id] = load_persona_environment(household_id, self.assignment)
+            self._envs[household_id] = load_persona_environment(
+                household_id, self.assignment, thermal=self.cfg.thermal
+            )
         return self._envs[household_id]
 
     def client(self, seed: int) -> LLMClient:

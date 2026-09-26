@@ -105,6 +105,14 @@ the LLM's raw WTP by least squares through the origin
 rule on all 24 households with persona bands and with fixed ±2.0 bands. It
 makes zero API calls. Output is in `results/phase3/rule_based/`.
 
+**Thermal heterogeneity.** `experiment.yaml` -> `thermal_heterogeneity`
+gives each household its own seeded R and C multipliers (U(0.8, 1.2) each)
+and a starting indoor temperature of setpoint + U(-1, 1) C.
+`load_persona_environment` applies them, so all four agents run the same
+physics. The MILP also plans with them. Setting `enabled: false` reproduces
+the homogeneous runs exactly. `run_rule_based.py` writes the resolved values
+to `thermal_params.csv`.
+
 **Harness** (`src/hems/phase3.py`, `experiments/run_phase3.py`,
 `experiments/calibrate.py`, all settings in `experiment.yaml` -> `phase3:`).
 Each date is simulated twice, once with no CPP and once with one CPP event.
