@@ -8,6 +8,15 @@ Solves once at construction; `decide()` reads back the precomputed
 per-step schedule, so the same `simulator.run_simulation` loop drives the
 actual physics/accounting for MILP, noisy-MILP, and the LLM agent alike
 (apples-to-apples, §6.1).
+
+Comfort floor: the band floor only limits *AC-induced* cooling. With the AC
+off the house can drift below `band_lo_c` on its own overnight (outdoor min
+22C), which no control can prevent and which used to make the hard band
+infeasible. So the floor at step t is `min(band_lo_c, free_drift[t])`, where
+`free_drift` is the precomputed AC-off trajectory from the same initial temp
+(`free_drift_temps`) -- a constant per step, so the constraint stays linear.
+Where the free drift never goes below the floor, the constraint is exactly
+the old one. No soft penalties.
 """
 
 from __future__ import annotations
@@ -22,6 +31,16 @@ from hems.environment.appliances import HVACParams, WasherParams, synthetic_outd
 from hems.environment.household import Household
 from hems.environment.simulator import STEPS_PER_DAY
 from hems.environment.tariff import Tariff
+
+
+def free_drift_temps(hp: HVACParams, initial_temp_c: float) -> list[float]:
+    """Indoor temps T[0..48] with the AC off all day (same RC update as the MILP)."""
+    gain = hp.dt_hours / (hp.r * hp.c)
+    temps = [initial_temp_c]
+    for t in range(STEPS_PER_DAY):
+        t_out = synthetic_outdoor_temp_c(t, hp.outdoor_min_c, hp.outdoor_max_c, hp.outdoor_peak_hour)
+        temps.append(temps[-1] + gain * (t_out - temps[-1]))
+    return temps
 
 
 class MILPAgent:
@@ -69,6 +88,11 @@ class MILPAgent:
             covering = [s for s in valid_starts if s <= t < s + wp.duration_steps]
             return pulp.lpSum(start_washer[s] for s in covering)
 
+        # Floor per step: the band floor, relaxed to the AC-off drift where the
+        # house would fall below it unaided (see module docstring).
+        drift = free_drift_temps(hp, self._initial_temp)
+        self.floor_c = [min(hp.band_lo_c, drift[t + 1]) for t in range(STEPS_PER_DAY)]
+
         temp = {t: pulp.LpVariable(f"temp_{t}") for t in range(STEPS_PER_DAY + 1)}
         prob += temp[0] == self._initial_temp
 
@@ -82,7 +106,7 @@ class MILPAgent:
             prob += temp[t + 1] == (
                 temp[t] + gain_coeff * (t_out - temp[t]) - cool_coeff * on_hvac[t]
             )
-            prob += temp[t + 1] >= hp.band_lo_c
+            prob += temp[t + 1] >= self.floor_c[t]
             prob += temp[t + 1] <= hp.band_hi_c
 
         cost_terms = []

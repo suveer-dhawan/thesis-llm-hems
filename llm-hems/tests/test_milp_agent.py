@@ -10,11 +10,12 @@ feasible.
 from __future__ import annotations
 
 import datetime as dt
+from dataclasses import replace
 
 import pytest
 
 from hems.agents.base import Decision, DecisionContext
-from hems.agents.milp_agent import MILPAgent
+from hems.agents.milp_agent import MILPAgent, free_drift_temps
 from hems.agents.noisy_milp_agent import NoisyMILPAgent
 from hems.environment.appliances import HVACParams, WasherParams
 from hems.environment.household import Household, HouseholdParams
@@ -138,3 +139,26 @@ def test_noisy_milp_seed_is_deterministic(household, tariff, hvac_params, washer
     b = NoisyMILPAgent(household, tariff, hvac_params, washer_params, HOT_DAY, seed=99)
     assert a._milp.hvac_on == b._milp.hvac_on
     assert a._milp.washer_on == b._milp.washer_on
+
+
+def test_milp_floor_relaxed_only_where_free_drift_falls_below_it(
+    household, tariff, hvac_params, washer_params
+):
+    # Setpoint 25.5 / band 2.0 -> floor 23.5; the AC-off house drifts below
+    # it overnight (outdoor min 22C), which the hard floor used to make infeasible.
+    hp = replace(hvac_params, setpoint_c=25.5)
+    drift = free_drift_temps(hp, hp.start_temp_c)
+    assert min(drift[1:]) < hp.band_lo_c
+    agent = MILPAgent(household, tariff, hp, washer_params, HOT_DAY)
+    assert agent.floor_c == [min(hp.band_lo_c, d) for d in drift[1:]]
+    result = run_simulation(household, tariff, hp, washer_params, agent, HOT_DAY)
+    for s, floor in zip(result.steps, agent.floor_c):
+        assert s.indoor_temp_c >= floor - 1e-6
+        assert s.indoor_temp_c <= hp.band_hi_c + 1e-6
+
+
+def test_milp_floor_unchanged_when_drift_stays_in_band(
+    household, tariff, hvac_params, washer_params
+):
+    agent = MILPAgent(household, tariff, hvac_params, washer_params, HOT_DAY)
+    assert agent.floor_c == [hvac_params.band_lo_c] * 48
