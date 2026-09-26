@@ -41,5 +41,12 @@ Single simulated day; synthetic weather; uniform 2 kW AC imposed on all househol
 - **A.** Second model (Gemini 3.6 or 3.8 Flash), identical config.
 - **B.** 24 additional households (pool: 1,190 eligible, none reused), drawn with the original cluster × income stratification, no solar; dwelling matched where available (relax dwelling first if a cell is empty). Archetype (burden) cut-offs **held fixed at the current 24's values** so no existing household changes archetype. Identical config; reported both separately and pooled (N = 48).
 
+## Pre-run clarifications (wording only; code at tag unchanged)
+1. "One call per decision" means one valuation per decision; identical prompts are served from the deterministic cache (T = 0), so 2,304 decisions ≈ 893 live calls.
+2. Retries are derived as call attempts − new cache entries. A call failing after 3 attempts halts the run; a restart from the same tag resumes from the cache with identical results. Any such restart is logged here.
+3. Per-orientation results with n and bootstrap CIs are post-run analysis on the saved per-household outputs (the harness summarises by archetype).
+4. The $8 cap is a billing limit, not enforced in code; expected spend ≈ $0.25–1.
+5. Arms A and B each require a config/code change and therefore a new tag and a Deviations entry. Arm B needs the current 24's burden tercile cut-offs entered as fixed thresholds. Arm A requires confirming the second model's paid-tier quota first.
+
 ## Deviations
 _None yet._
