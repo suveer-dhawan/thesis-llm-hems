@@ -51,4 +51,4 @@ Single simulated day; synthetic weather; uniform 2 kW AC imposed on all househol
 7. Live mode defaults to a 2-household slice when --households is omitted; the final run passes all 24 IDs and all settings explicitly via ~/launch_final_v1.sh (copied into the results folder after the run). An initial launch on 2026-09-26 was aborted before producing results because of this default; its 3 cache entries were discarded and the cache restored to 191 entries.
 
 ## Deviations
-_None yet._
+- Arm A: model changed to gemini-3.8-flash; new cache; all else identical to final-run-v1.

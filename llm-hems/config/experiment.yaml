@@ -73,7 +73,7 @@ llm:
     # battery exhausts by itself -- gemini-3.5-flash-lite (same Flash
     # family, lighter tier) has no such daily ceiling and is the workable
     # default here. Re-check both models' quotas before a later run.
-    model: gemini-3.5-flash-lite
+    model: gemini-3.8-flash
     sdk_version: null              # filled in from the installed package at runtime (llm/client.py)
     rate_limit_rpm: 1000           # paid-tier limit for this model/key (set 2026-09-26; was 5 on the
                                     # free tier). llm/client.py throttles calls to this before sending;
@@ -208,7 +208,7 @@ phase3:
   # file: the prompts changed (price language removed) and the cache key now
   # includes the response-schema hash + max_output_tokens, so no older entry
   # could be hit anyway. run_phase3.py --cache-path overrides (sharding).
-  llm_cache_path: results/phase3/llm_cache_final.jsonl
+  llm_cache_path: results/phase3/llm_cache_arm_a.jsonl
 
   calibration:
     # DISABLED for the final run: global_scale is fixed at
