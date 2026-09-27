@@ -18,6 +18,9 @@ __pycache__/
 Thesis/
 !results/phase3/
 !results/phase3/**
+!results/thesis_figures/
+!results/thesis_figures/**
+!results/INDEX.md
 
 # re-ignore after the results/ negations above (later rules win)
 .DS_Store

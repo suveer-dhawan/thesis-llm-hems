@@ -1,236 +1,322 @@
 # Build Spec — LLM Satisficing HEMS Simulator
 
-**Purpose:** implementation brief for the thesis simulator. Written to be handed to Claude Code (in VS Code) as the build contract. Scoped for an HD-grade, part-time build.
-
-**Companion doc:** `decision-memo-semester2.md` (framing + decisions). Read that first.
-
-> **CONFIRM tags:** anything marked `CONFIRM` is a sensible default so the build can start today, but should be checked against a real source (Ausgrid tariff, appliance nameplate data, current model IDs) before results are reported.
+**Status (2026-09-27):** describes the architecture **as built** at tag
+`final-run-v1` / `final-run-v1-arm-a` and on `main`. The original build brief
+(Phase 0–4 plan) is in git history. §14 lists every place the built system
+departs from it and why. Code lives in `llm-hems/`; how to run and reproduce
+it is in `llm-hems/README.md`, and every results folder is indexed in
+`llm-hems/results/INDEX.md`. The final-run design is fixed by
+`llm-hems/docs/prereg_final_run_v1.md`.
 
 ---
 
-## 1. What we are building (one paragraph)
+## 1. What the system does
 
-A discrete-time (30-min) simulator of a single household's appliance scheduling under a dynamic electricity tariff. A **deterministic Python core** owns all physics and all arithmetic (appliance state, energy, cost). A pluggable **decision agent** decides, each interval, whether to run each controllable appliance. Three agents are compared: a **MILP** cost-minimiser (hyper-rational), a **noisy-MILP** (heterogeneous strawman), and the **LLM satisficing agent** (proposes a willingness-to-pay; Python enforces the halt). The headline result is that the LLM's induced **price elasticity** falls in the empirical human range while it avoids the synchronised peak the MILP produces at scale.
+A discrete-time (30-min, 48 steps/day) simulator of household
+air-conditioning under a time-of-use tariff with one critical-peak-pricing
+(CPP) event. A **deterministic Python core** owns all physics and arithmetic:
+thermal state, energy and cost. A pluggable **decision agent** decides, each
+step, whether to run the AC. Four agents run the same households, physics and
+tariff:
 
-## 2. Design principles (non-negotiable)
+| Agent | Where the decision comes from |
+|---|---|
+| **MILP** | PuLP/CBC cost minimiser over the whole day with perfect foresight of tariff and weather; hard comfort band. |
+| **Noisy-MILP** | The same MILP with seeded per-household jitter of band width, setpoint and deadline (and optionally perceived price); seeds 42–44. |
+| **Rule-based satisficer** | `WTP = k[orientation] × max(0, T_in − ceiling)`, through the **same** Python halt as the LLM. No LLM. |
+| **LLM satisficer** | The LLM returns a price-blind WTP ($) for running the AC this half-hour; Python applies the halt. |
 
-1. **All numbers live in Python.** The LLM never does arithmetic. It returns a subjective valuation; Python computes cost, compares, and decides. This is the core methodological claim — enforce it in code, not just in prose.
-2. **Agents are interchangeable behind one interface.** The simulator loop does not know which agent it is running. Swapping MILP ↔ LLM changes one config line.
-3. **Everything is config-driven and seeded.** No magic numbers in source. One `experiment.yaml` fully determines a run. Every run writes its resolved config + seed into its results folder.
-4. **Every decision is logged.** For the LLM agent, log the prompt, the returned WTP, the reasoning string, the computed cost, and the run/defer decision — every appliance, every interval. Auditability is what defends "it satisfices" against "it's just noise."
+The research question (pre-registered): does this decoupled design produce
+human-range price response, and how do its post-CPP rebound and comfort cost
+compare with optimising and rule-based agents?
 
-## 3. Repository layout
+## 2. Design principles
 
-```
-llm-hems/
-  README.md
-  requirements.txt
-  pyproject.toml                # or setup.cfg; ruff + pytest config
-  config/
-    appliances.yaml
-    tariff.yaml
-    household.yaml              # persona / comfort params
-    household_sample.csv        # 24-household population manifest (Phase 0/4)
-    experiment.yaml             # ties it all together for one run
-  data/
-    raw/                        # SGSC clean CSVs (gitignored)
-    processed/                  # cached parquet after ingest
-  src/hems/
-    __init__.py
-    environment/
-      tariff.py                 # TOU + CPP cost calculator
-      appliances.py             # HVAC thermal model + shiftable load
-      household.py              # base load + physical state container
-      simulator.py              # the 30-min orchestration loop
-    agents/
-      base.py                   # DecisionAgent interface
-      milp_agent.py             # PuLP optimal
-      noisy_milp_agent.py       # heterogeneous / jittered MILP
-      llm_agent.py              # hybrid satisficing agent
-      prompts/
-        hvac.txt
-        shiftable.txt
-    llm/
-      client.py                 # provider-agnostic wrapper
-      schemas.py                # pydantic I/O contracts
-    analysis/
-      metrics.py                # PAR, peak kW, cost, load curves
-      elasticity.py             # elasticity estimator
-      plots.py
-  experiments/
-    run_single.py               # one household, one agent
-    run_population.py           # loop over N households -> aggregate
-    calibrate.py                # fit WTP scale on calibration subset
-  results/                      # timestamped run folders (gitignored)
-  tests/
-    test_tariff.py
-    test_appliances.py
-    test_simulator.py
-    test_elasticity.py
-```
+1. **All numbers live in Python.** The LLM returns a subjective valuation and
+   nothing else. Python computes cost, compares, and decides.
+2. **The prompt is price-blind.** The LLM never sees a rate, a cost or a CPP
+   flag, only comfort state, clock and persona. With price in the prompt, WTP
+   itself reacted to price (`experiments/probe_wtp_price*.py`), which would
+   double-count the response the halt is supposed to produce.
+3. **Agents are interchangeable behind one interface.** The simulator loop
+   does not know which agent it is running.
+4. **Config-driven, seeded, provenance-stamped.** `config/experiment.yaml`
+   fixes a run. Every results folder records `config_resolved.yaml` and
+   `provenance.json` (commit, dirty flag, branch, argv, Python version).
+5. **Every decision is logged**: prompt, raw WTP, reason, echoed state,
+   `cost_now`, utility, run/defer, model version and cache hit, for every
+   step.
+6. **Reproducible from the cache.** At T = 0 with a fixed seed, the LLM
+   response cache is the record. Offline replay reproduces a run exactly with
+   zero API calls.
 
-## 4. The simulation loop (the spine)
-
-`simulator.py` runs one household over a horizon (default: one day = 48 steps; extend to multi-day for elasticity).
+## 3. Repository layout (`llm-hems/`)
 
 ```
-for t in 0..47:                       # 30-min steps
-    tariff_state = tariff.rate_at(t)          # $/kWh, is_cpp flag
-    for appliance in controllable:
-        ctx = build_context(appliance, household, t, tariff_state)
-        decision = agent.decide(ctx)          # run: bool  (agent-specific internals)
-        if decision.run:
-            energy = appliance.step(on=True)   # updates physical state
-            cost   = energy * tariff_state.rate
-        else:
-            appliance.step(on=False)
-        log(t, appliance, decision, cost, appliance.state)
-    accumulate_load(t)
-return RunResult(load_curve, total_cost, decision_log)
+config/
+  tariff.yaml, appliances.yaml, household.yaml
+  persona.yaml                 # persona schema: burden terciles, thermal-tolerance rule
+  persona_assignment.csv       # frozen per-household personas (experiments/build_personas.py)
+  household_sample.csv         # the 24-household manifest
+  experiment.yaml              # llm:, noisy_milp:, thermal_heterogeneity:, rule_based:, phase3:
+data/processed/                # households.parquet, load_curves.parquet (committed); raw/ gitignored
+docs/prereg_final_run_v1.md
+src/hems/
+  environment/ tariff.py, appliances.py (RC HVAC + washer), household.py,
+               persona.py (personas + thermal heterogeneity), simulator.py
+  agents/      base.py, stub_agent.py, milp_agent.py, noisy_milp_agent.py,
+               rule_based_agent.py, llm_agent.py, prompts/{hvac,shiftable}.txt
+  llm/         client.py (Gemini + Matilda backends, disk cache, retries, rate limit), schemas.py
+  analysis/    metrics.py, elasticity.py, plots.py
+  phase3.py          # final-run harness
+  phase3_report.py   # per-household artifacts -> summaries + report.md
+  provenance.py
+experiments/   run_phase3.py, merge_shards.py, build_personas.py, fit_rule_based.py,
+               analyze_final_v1.py, analyze_cross_model.py, analyze_noise_test.py,
+               make_thesis_figures.py, plus earlier-phase scripts (run_single, sweeps, probes)
+results/       indexed in results/INDEX.md
+tests/         129 tests: tariff, appliances, simulator, elasticity, MILP, rule-based,
+               LLM agent + client, persona, thermal heterogeneity, harness, sharding
 ```
 
-Base (uncontrollable) load for each interval comes from the SGSC profile so the household's aggregate curve is realistic; the controllable appliances are added on top.
+## 4. Simulation loop (`environment/simulator.py`)
 
-### Base load vs. flexible layer (Phase 1 design decision)
+```
+for t in 0..47:
+    rate, is_cpp = tariff.rate_at(t, date)
+    for appliance in (hvac, washer):
+        ctx = DecisionContext(t, clock, appliance state, cost_now, rate, is_cpp, household)
+        decision = agent.decide(ctx)
+        step the appliance physics with decision.run; account energy and cost
+        log the decision
+    record base, flexible (HVAC + washer) and total kWh, indoor temperature, band
+```
 
-SGSC is a **whole-home aggregate** meter reading — it cannot be disaggregated into per-appliance traces. Rather than pretend otherwise, the simulator treats each sampled household's SGSC curve as its **fixed, non-controllable base load** exactly as metered, and adds HVAC + the washer on top as an **explicit flexible layer** that the agent controls. This means the SGSC curve's own historical AC/appliance behaviour is *not* subtracted out before the synthetic flexible layer is added — the flexible layer is a deliberate modelling addition on top of the real aggregate, not a disaggregation of it. `total = base + flexible` at every step; `cost = total_kwh * rate` (the bill doesn't distinguish base from flexible — only the flexible portion is within the agent's control).
+- **Base load:** the household's real SGSC whole-home profile for the date,
+  used as-is (not disaggregated). The flexible layer (HVAC, washer) is added
+  on top. Base, flexible and total are tracked separately at every step.
+- **Units:** kWh per 30-min step everywhere; kW = kWh × 2; cost = kWh × rate.
 
-The flexible appliances are sized (config-driven, `config/appliances.yaml`) so that under normal operation flexible energy is a **realistic ~10–25% of the household's daily total** (`flexible / (base + flexible)`), printed by every run as `flexible_share_pct`. For the Phase 1 reference household (`8596070`, a hot summer weekday, see below), a bang-bang thermostat calibration against `r=2.0, c=2.5` (5h RC time constant) gives HVAC ≈ 10–14 kWh/day depending on control policy, plus a fixed 1.6 kWh washer cycle, landing flexible share at **~17–21%** of the day's total — inside the target band.
-
-Because elasticity (Phase 3) is defined as a *whole-household* price response, `simulator.py` always tracks `base`, `flexible`, and `total` load (and cost) **separately at every step**, never collapsing them early — elasticity will be measured on `total`, matching a whole-household elasticity definition, while `flexible` remains available for per-appliance diagnostics.
-
-Units, kept consistent everywhere in the codebase: SGSC cells and all appliance energy figures are **kWh per 30-min step**; `kW = kWh_per_step * 2`; `cost($) = energy(kWh) * rate($/kWh)`.
-
-## 5. Agent interface
+## 5. Agent interface (`agents/base.py`)
 
 ```python
-# agents/base.py
 class Decision(BaseModel):
     run: bool
-    wtp: float | None = None      # LLM only; None for MILP
+    wtp: float | None = None       # WTP agents only
     reason: str | None = None
+
+class DecisionContext(BaseModel):
+    t: int; clock: str; day_index: int
+    appliance: dict                # HVAC: indoor_temp_c, setpoint_c, tolerance_band_c, ...
+                                   # washer: steps_completed, duration_steps, slack, deadline, ...
+    cost_now: float                # exact $ to run this appliance this step (Python)
+    rate: float; is_cpp: bool; rate_forecast: list[float] | None
+    household: dict                # persona incl. comfort_orientation, archetype
 
 class DecisionAgent(Protocol):
     def decide(self, ctx: DecisionContext) -> Decision: ...
     def name(self) -> str: ...
 ```
 
-`DecisionContext` (what every agent receives — Python-computed, appliance-agnostic where possible):
-- `t`, `clock` (HH:MM), `day_index`
-- `appliance`: type, semantics, rated_kw, and appliance-specific state
-  - HVAC: `indoor_temp`, `outdoor_temp`, `setpoint`, `tolerance_band`
-  - shiftable: `steps_remaining_to_complete`, `deadline_step`, `released_step`, `interruptible: false`
-- `cost_now`: **exact $ to run this appliance this interval** (Python)
-- `rate`, `is_cpp`, and (optional) `rate_forecast` for the rest of the horizon — **Python-only**: used for `cost_now` and the halt rule, never rendered into the LLM prompt (see §6.3)
-- shiftable `slack_steps` (`steps_until_deadline - steps_remaining`, Python-computed): the deadline buffer, stated explicitly in the prompt so the LLM never has to derive it from two separate numbers
-- `household`: comfort/persona params (see §8)
+**Halt rule, shared by both satisficers** (`llm_agent.satisficing_halt`):
+`U = global_scale × archetype_factor × WTP − cost_now`, run iff `U ≥ 0`. In
+the final runs `global_scale = 1.0` (the LLM's dollar WTP is taken literally)
+and `archetype_factor` is A/B/C = 1.3 / 1.0 / 0.7.
 
-## 6. The three agents
+**Forced washer outcomes** (`forced_washer_outcome`): when Python already
+fixes the outcome (cycle complete, non-interruptible cycle in progress, or
+before the release step), no agent is asked, so no prompt is sent.
 
-### 6.1 MILP (hyper-rational baseline)
-- Library: **PuLP** (CBC solver is fine).
-- Objective: minimise total energy cost over the horizon.
-- Constraints: shiftable load runs `duration` contiguous steps within `[released, deadline]`; HVAC keeps indoor temp inside a **hard** comfort band every step (linearised thermal dynamics — see §7).
-- Output: the optimal on/off schedule → fed through the same `simulator` accounting for an apples-to-apples load curve.
+## 6. Agents
 
-### 6.2 Noisy-MILP (heterogeneous strawman) — *cheap, high value*
-Same MILP, but per household draw random perturbations (seeded): jitter the comfort band width, the setpoint, and/or the effective deadline within tolerance; optionally add small random noise to the perceived price. Purpose: show whether trivial heterogeneity alone reproduces staggering + a bounded elasticity. The LLM must beat *this*, not just the single clean MILP.
+### 6.1 MILP (`milp_agent.py`)
+Minimises the day's energy cost with PuLP/CBC under linearised RC dynamics.
+The comfort ceiling is a hard constraint. The floor limits only AC-induced
+cooling: `floor_t = min(band_lo, AC-off free drift_t)`, so a night that drifts
+below the floor by itself stays feasible. The MILP plans with each
+household's own heterogeneous R, C and initial temperature.
 
-### 6.3 LLM satisficing agent (the thesis)
-Per appliance per interval:
-1. Python builds the context and computes `cost_now`.
-2. LLM is prompted (structured output) to return **`wtp`**: the dollar amount this household would willingly pay for the benefit of operating the appliance in *this* interval, given comfort state and time — plus a one-line `reason`. **No cost comparison is asked of the LLM.**
-3. Python computes utility `U = wtp - cost_now` and applies the **halt rule: run iff `U >= 0`** (satisfice — run while good-enough, stop when the price friction exceeds the comfort valuation).
-4. Log everything.
+### 6.2 Noisy-MILP (`noisy_milp_agent.py`)
+The same MILP after seeded per-household jitter: band ±0.5 °C, setpoint
+±0.5 °C, washer deadline ±1 step, perceived-price noise σ = 0.02. The
+jittered parameters are the household's actual preferences and feed the
+accounting too. It tests whether trivial heterogeneity alone reproduces
+staggering and bounded elasticity.
 
-**The prompt is price-blind.** The LLM is never told the electricity rate or whether a CPP event is active — it sees only comfort/urgency state (indoor temp + comfort band for HVAC; cycle progress + the Python-computed deadline `slack_steps` for the washer) and the household persona. `DecisionContext.rate` / `is_cpp` / `cost_now` still exist and are used by Python for step 3's cost/halt arithmetic; they are simply never rendered into `agents/prompts/{hvac,shiftable}.txt`. This was a post-hoc fix (`experiments/probe_wtp_price*.py`): with price in the prompt, the WTP itself already encoded a price reaction, contaminating the price-elasticity measurement the halt rule is supposed to produce on its own (§1, §10).
+### 6.3 Rule-based satisficer (`rule_based_agent.py`)
+The LLM agent with the LLM replaced by a formula, going through the same halt
+and forced-washer logic:
 
-Rationale for the split: LLMs are reliable at qualitative preference valuation, unreliable at arithmetic (macmillan2024ir); the halt is deterministic and reproducible because Python owns the comparison.
+- HVAC: `WTP = k[orientation] × max(0, T_in − ceiling)`
+- washer: `WTP = w_max × clamp(1 − slack / slack_at_release, 0, 1)`
 
-**Model config:** primary model + one ablation model, both current (`CONFIRM` exact IDs — GPT-4o / Claude 3.5 Sonnet as written in Part 1 are dated). Default provider is `gemini` (`config/experiment.yaml`'s `llm.provider`) — Matilda's API exposes no `temperature`/`seed` parameter, so it can't meet the determinism requirement below. **Temperature = 0.0, seed = 42** (`llm.temperature` / `llm.seed`, both passed into Gemini's `GenerateContentConfig`): `probe_wtp_price_v3.py` found temperature=0 alone does **not** make two identical prompts return an identical `wtp` — the seed is required as well. Run `n_seeds` (default 3) per scenario; report spread.
+`k` and `w_max` are fitted by least squares through the origin to raw LLM WTP
+from the comfort-sweep logs (`experiments/fit_rule_based.py`), then frozen in
+`experiment.yaml → rule_based:`. Fixed-band k = 3.791 / 0.620 / 0.660
+(prioritising / balanced / flexible).
 
-## 7. Appliance models (`CONFIRM` all params)
+### 6.4 LLM satisficer (`llm_agent.py`, `llm/`)
+One structured-output call per decision (identical prompts are served from
+the cache). The HVAC prompt (`prompts/hvac.txt`) contains exactly:
 
-### HVAC (thermal friction)
-First-order RC thermal model, per 30-min step `Δt`:
-```
-T_in[t+1] = T_in[t] + (Δt / (R*C)) * (T_out[t] - T_in[t]) - (COP * P_hvac * on[t] * Δt) / C
-```
-- `P_hvac` rated ≈ **2.0 kW** `CONFIRM`; `COP` ≈ **3.0** `CONFIRM`
-- `R`, `C` chosen so a house drifts a few °C over an hour with HVAC off `CONFIRM` (calibrate to a plausible drift rate; document the choice)
-- setpoint ≈ **24 °C**, comfort tolerance ± **2 °C** `CONFIRM`
-- `T_out[t]`: use a synthetic summer day curve, or SGSC-region temperature if available `CONFIRM`
-- **For MILP:** linearise (fix COP, treat as linear in `on[t]`) so it stays an MILP.
+- the persona sentence for the household's comfort orientation;
+- the clock;
+- indoor temperature (0.1 °C);
+- the comfort band;
+- one Python-computed comfort fact ("X °C OVER the ceiling", inside, or
+  under).
 
-### Shiftable load — washing machine (temporal friction)
-- Non-interruptible, **duration = 2 h = 4 steps** `CONFIRM`
-- Power ≈ **0.8 kW** `CONFIRM`
-- `released_step` (earliest start) and `deadline_step` (must finish by e.g. 21:00) from `household.yaml`
-- Comfort semantics for the LLM: WTP to have laundry done rises as the deadline nears (urgency), and is ~0 long before it's needed.
+It contains no price, no cost, no CPP flag and no outdoor temperature. The
+response schema (`HVACWTPResponse`) returns `wtp ≥ 0`, a one-line `reason`,
+and echoes of the indoor temperature and band bounds. The echoes are checked
+against the real input and mismatches are logged as misreads (0 in both final
+runs).
 
-Keep the appliance set to exactly these two for the core thesis. Do not add EV / battery unless Phase 3 finishes early.
+**Client** (`llm/client.py`): a provider-agnostic `LLMClient` with Gemini
+(`google-genai`, model pinned in config) and Matilda backends. Settings are
+T = 0.0 and seed 42 (T = 0 alone was not deterministic), bounded retries with
+backoff, and a client-side rate limit. The disk cache is append-only JSONL,
+keyed on provider, model, temperature, seed, max output tokens,
+response-schema hash and exact prompt. Each entry stores the returned model
+version and a timestamp.
 
-## 8. Household / persona params (`household.yaml`)
-Small set of interpretable comfort parameters the LLM prompt is conditioned on and the MILP bands are derived from — e.g. `thermal_sensitivity` (tight vs loose band), `price_sensitivity` (a qualitative descriptor, not a number the LLM does math on), `deadline` for the shiftable load, `occupied_hours`. Representative households come from the SGSC clusters (Phase 0 selects them).
+**Models:** `gemini-3.5-flash-lite` (final run v1) and `gemini-3.8-flash`
+(Arm A). Matilda was rejected after the 2026-09-06 reliability battery: it
+misread 38.5% of state and exposes no model id, temperature or seed.
 
-## 9. Tariff (`tariff.yaml`)
-Window structure (peak/shoulder/off-peak hours, and the seasonal peak) follows Ausgrid's current residential TOU network periods (source: "Ausgrid residential TOU network periods, 2025–26"); the $/kWh rates are representative retail values on top of that network tariff, `CONFIRM` against a current retail plan:
-- Peak (15:00–21:00, every day, **summer Nov–Mar and winter Jun–Aug only**): `$0.55/kWh`. Apr–May and Sep–Oct have no peak season — that window falls back to the shoulder rate.
-- Shoulder (07:00–15:00 and 21:00–22:00, every day): `$0.28/kWh`
-- Off-peak (22:00–07:00, every day): `$0.22/kWh`
-- **CPP events:** on flagged days, override a 2–4 h window with a spike. Two severities are configured for sensitivity: moderate `$1.20/kWh` (the default demo event, on the Phase 1 hot day `2013-01-18`) and severe `$2.50/kWh` `CONFIRM`. Schedule of CPP days is config.
+## 7. Physics (`environment/appliances.py`, `persona.py`)
 
-`tariff.rate_at(t, date)` returns `(rate, is_cpp)`; the peak season and weekday both depend on `date`. Unit-tested against the table, including the seasonal peak gate and the CPP severities (`tests/test_tariff.py`).
+**HVAC:** first-order RC model per 30-min step,
+`T[t+1] = T[t] + Δt/(R·C) · (T_out[t] − T[t]) − COP · P · on[t] · Δt / C`.
+P = 2.0 kW, COP = 3.0, R = 2.0 °C/kW and C = 2.5 kWh/°C (placeholders). The
+setpoint is 24 °C. The outdoor temperature is a synthetic cosine day from
+22 to 32 °C, peaking at 15:00.
 
-## 10. Elasticity estimator (`analysis/elasticity.py`) — the key metric
+**Thermal heterogeneity** (`thermal_heterogeneity:`): each household gets
+seeded multipliers R × U(0.8, 1.2) and C × U(0.8, 1.2), and starts at
+setpoint + U(−1, 1) °C. All agents use the same physics, and the MILP plans
+with it.
 
-Short-run own-price arc elasticity of demand for the priced window:
-```
-elasticity = (%ΔQ) / (%ΔP)
-           = ((Q_cpp - Q_base) / Q_base) / ((P_cpp - P_base) / P_base)
-```
-where `Q` is energy consumed in the affected window, comparing a **baseline day** (no CPP) against a **CPP day**, holding the household fixed. Report per-appliance and aggregate. Expect negative values.
+**Washer:** non-interruptible 4 × 30 min at 0.8 kW with release and deadline
+steps. It is disabled in the final runs (`phase3.washer_enabled: false`: a
+zero-length cycle, so no prompts and no load), because the pilot showed a
+deadline-driven valuation with zero price response by construction.
 
-**Success criterion:** aggregate short-run elasticity falls within Conway 2020's Australian range **−0.026 to −0.47**, and — to show it isn't hand-tuned — the WTP scale is calibrated on a **calibration subset** of households (`calibrate.py`) and elasticity is then reported on a **held-out subset**. State the pre-registered target and split in the write-up.
+## 8. Households and personas
 
-## 11. Other metrics (`analysis/metrics.py`)
-- **Peak-to-Average Ratio (PAR)** of the aggregate load curve.
-- **Peak demand (kW)** and time-of-peak.
-- **Total cost ($)** per household.
-- **Load curves** for the four-way overlay: SGSC baseline / MILP / noisy-MILP / LLM.
-- **Behavioural-coherence check** for the discriminating scenario (§12).
+- **Households:** 24 interview-complete SGSC households
+  (`config/household_sample.csv` → `data/processed/*.parquet`), stratified by
+  load-shape cluster × income. Date 2013-01-18, a hot summer Friday.
+- **Personas** (`experiments/build_personas.py` → `config/persona_assignment.csv`):
+  - **Archetype A/B/C** is the energy-burden tercile: annual kWh ×
+    time-weighted rate ÷ income-band midpoint. It acts **only in Python**, as
+    the halt's WTP factor. The LLM never sees it.
+  - **Comfort orientation** is derived from dwelling and occupancy. Children
+    or ducted air conditioning → *comfort-prioritising*; split system →
+    *balanced*; no air conditioning → *comfort-flexible*. This gives n =
+    5 / 8 / 11. The orientation is the only persona the LLM sees: one
+    sentence, with no money wording.
+- **Comfort band:** fixed ±2.0 °C around 24 °C for everyone
+  (`phase3.band_mode: fixed`, primary). Persona-linked bands were tested in
+  the band-confound ablation and are not used in the final runs.
 
-## 12. The discriminating scenario (separates satisficing from noise)
-Design one scenario where structured reasoning and random jitter diverge — e.g. a **single unexpected CPP spike** with a **near deadline** on the shiftable load. A noisy-MILP responds only through its random draws; a satisficing agent should coherently trade the deadline urgency against the spike (defer if slack remains, run through the spike if the deadline forces it). Report whether the LLM's behaviour tracks the scenario logic where the noisy-MILP does not. This is the qualitative evidence that the LLM adds something.
+## 9. Tariff (`environment/tariff.py`, `config/tariff.yaml`)
 
-## 13. Experiment protocol
-1. **Phase 0:** ingest SGSC → select representative households → freeze config. Re-drawn to the **24 interview-complete households** from the sample audit (manifest: `config/household_sample.csv`, frozen into `data/processed/{households,load_curves}.parquet` by `experiments/build_household_sample.py`), replacing the original 20-household stratified sample; demo customer `8596070` is preserved across the re-draw.
-2. **Phase 1:** run MILP + noisy-MILP on one household; sanity-check load curves and cost.
-3. **Phase 2:** run LLM agent (primary + ablation model) on one household, both appliances.
-4. **Phase 3 (single-household):** calibrate WTP on subset; report elasticity on held-out; four-way overlay; multi-seed spread; discriminating scenario.
-5. **Phase 4 (population):** loop over N≈10–30 households → aggregate PAR / peak / rebound-peak. Droppable.
+The TOU windows follow Ausgrid's residential network periods (2025–26). Peak
+is 15:00–21:00 in summer (Nov–Mar) and winter (Jun–Aug); shoulder is
+07:00–15:00 and 21:00–22:00; off-peak is 22:00–07:00. The retail rates are
+representative: peak 0.55, shoulder 0.28, off-peak 0.22 $/kWh. **CPP:** on
+the CPP day, 17:00–20:00 is raised to 1.20 $/kWh (moderate; a severe level of
+2.50 $/kWh is also configured). Each date is simulated twice, as a baseline
+day and a CPP day, and only the tariff differs between them.
 
-Every run: timestamped folder under `results/` with resolved config, seed, decision log (parquet), curves (png), and a `summary.json` of metrics.
+## 10. Harness (`phase3.py`, `experiments/run_phase3.py`)
 
-## 14. Stack
-- Python 3.11+, `pulp`, `pandas`, `numpy`, `pydantic`, `matplotlib`, `pyyaml`, `pytest`, `ruff`.
-- LLM SDKs for the two chosen providers, behind `llm/client.py` so neither leaks into agent logic.
-- Keep API keys in `.env` (gitignored); `client.py` reads them.
+- `Phase3Runner.run_pair(household, agent, date, seed, scale)` is the unit
+  run: a baseline day plus a CPP day, memoised so no run is simulated or
+  prompted twice.
+- Steps: `elasticity` (all agents × households × pair), `overlay`
+  (per-household and population load figures), and `seeds` (noisy-MILP
+  42–44; the LLM uses seed 42 only, at T = 0). `calibration` and `scenario`
+  exist but are disabled or excluded in the final runs.
+- **Artifacts** (`phase3_report.finalize`): `curves.parquet` (per household ×
+  agent × seed × day × step), both decision logs, and `personas_used.csv`.
+  Every summary is derived from these: `summary.csv/json`, elasticity tables,
+  `report.md`, overlays.
+- **Controls:** `--dry-run` (stub LLM, `llm_projection.json`); a budget gate
+  (a live run over more than 3 households needs `--approve-budget`); and
+  sharding (`--households` subsets into separate `--out` and `--cache-path`,
+  then `merge_shards.py`, identical to an unsharded run per
+  `tests/test_sharding.py`).
 
-## 15. Cost / latency guard
-LLM calls = appliances × steps × seeds × households × models. For one day: 2 × 48 × 3 × 1 × 2 ≈ 576 calls per household — trivial. Population of 30 ≈ 17k calls — still fine but cache aggressively (memoise identical contexts) and add a `--dry-run` stub agent for pipeline testing without spend.
+## 11. Metrics
 
-## 16. Definition of done (per phase)
-- **P0:** `run_single.py --agent stub` completes on a real SGSC household and writes a load curve.
-- **P1:** MILP total cost ≤ noisy-MILP ≤ (expected) LLM cost; all pass unit tests.
-- **P2:** LLM decision log shows WTP + reason + U + decision for every step.
-- **P3:** held-out elasticity printed with the Conway range; four-way overlay figure produced.
-- **P4:** aggregate PAR for MILP vs LLM over the household population.
+Per agent, on the population (sum of 24 households):
 
----
+- peak kW and time of peak, and PAR;
+- **post/CPP ratio**: 20:00–20:30 kW ÷ 17:00–20:00 mean kW on the CPP day
+  (rebound);
+- **degree-hours above the ceiling** (Σ max(0, T − ceiling) × 0.5 h) and max
+  exceedance (comfort cost);
+- **arc elasticity** of 17:00–20:00 energy, CPP vs base day:
+  `((Q_cpp − Q_base)/Q_base) / ((1.20 − 0.55)/0.55)`, pooled over households.
+  It is reported for the HVAC (flexible) layer and the whole household; the
+  midpoint method is reported alongside;
+- daily flexible-kWh change.
 
-### Open items to close before reporting results
-- Exact current model IDs (primary + ablation).
-- TOU *windows* now follow Ausgrid's current residential network periods (§9); the $/kWh rates on top of them are still representative retail placeholders — CONFIRM against a current retail plan. CPP severities ($1.20 / $2.50) are still illustrative.
-- Appliance nameplate params (HVAC kW/COP, RC values, washer kW/duration).
-- Final population size N — the household sample is now frozen at 24 (§13 Phase 0); Phase 4 may run a subset or all 24.
+The whole-household elasticity is compared with Conway (2020), −0.026 to
+−0.47. This is a validity check only, because base-load dilution makes it
+weakly falsifiable.
+
+## 12. Post-run analysis (offline, no API calls)
+
+- `analyze_final_v1.py` replays every run offline from the cache. The client
+  is patched to raise on any cache miss or write. It asserts exact equality
+  with the saved curves, logs and summary, then computes:
+  - H1 (WTP by orientation at matched °C over the ceiling, household-cluster
+    bootstrap CIs);
+  - per-orientation elasticity and comfort;
+  - switch-on timing;
+  - WTP resolution and monotonicity;
+  - the **isotonic counterfactual** (the LLM's own WTP made monotone per
+    orientation);
+  - with `--level-matched`, a rule-based agent refitted to that run's own
+    LLM WTP.
+- `analyze_cross_model.py`: compares the two models (exploratory).
+- `analyze_noise_test.py`: is the LLM's advantage reproducible by adding its
+  own residuals to the level-matched rule, i.i.d. or household-shuffled, over
+  50 seeds? Exploratory.
+- `make_thesis_figures.py`: the thesis figures and booktabs tables, with
+  every value asserted against the saved analysis. It is deterministic
+  (`--check`).
+
+## 13. Stack and environment
+
+Python 3.12.4. Pinned in `requirements-lock.txt`: pulp, pandas, numpy,
+pyarrow, pydantic, matplotlib, pyyaml, google-genai, matilda-client, pytest,
+ruff. API keys go in `llm-hems/.env` (gitignored): `GEMINI_API_KEY`,
+`MAINCODE_API_KEY`.
+
+## 14. Departures from the original brief
+
+| Original plan | As built | Why |
+|---|---|---|
+| Three agents | Four: a rule-based satisficer was added | A no-LLM control through the same halt. Without it, "the LLM satisfices" cannot be separated from "any threshold rule on temperature does". |
+| Price/persona wording in the prompt | Price-blind prompt; comfort orientation is the only persona in the prompt; cost sensitivity is a Python factor | Price wording did not move WTP (live slice), comfort wording did (probe v3), and price in the prompt contaminated the elasticity. |
+| Calibrate WTP scale on a subset, report on held-out | `global_scale` fixed at 1.0 a priori; calibration disabled | The pre-registration takes the LLM's dollar WTP literally, which removes a tuned parameter. |
+| HVAC + washer | HVAC only | The washer's valuation is deadline-driven, with zero price response by construction (pilot). This is reported as a finding. |
+| Persona-linked comfort bands | Fixed ±2.0 °C for all | The band-confound ablation: persona bands confound orientation with physics. |
+| Homogeneous thermal physics | Seeded per-household R, C, initial temperature | So staggering is not an artefact of identical houses. |
+| Primary + ablation model, three seeds | Two pinned Gemini models (final run + Arm A), T = 0 + seed 42, one LLM seed; noisy-MILP three seeds | T = 0 + seed is deterministic; the cache is the record. |
+| Matilda or other providers | Gemini only for the final runs | Reliability battery (state misreads; no model, temperature or seed control). |
+| Discriminating washer scenario (§12 of the brief) | Implemented (`run_scenario`), excluded from the final runs | The washer is excluded. |
+| Phase 4 population loop (optional) | The final runs are the population runs (24 households) | — |
+
+## 15. Open items (placeholders still marked `CONFIRM` in config)
+
+- Retail $/kWh rates on top of the Ausgrid windows, and the CPP severities.
+- Appliance nameplate and RC parameters (2 kW, COP 3, R, C). A uniform 2 kW
+  AC is imposed on every household, including those without air
+  conditioning. This is a pre-registered limitation.
+- Single simulated day, synthetic weather, no demand feedback on the tariff
+  (pre-registered limitations).

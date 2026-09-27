@@ -1,259 +1,175 @@
 # llm-hems
 
-A discrete-time (30-min) simulator of a single household's appliance scheduling
-under a dynamic electricity tariff. A deterministic Python core owns all
-physics and arithmetic (appliance state, energy, cost); a pluggable decision
-agent decides, each interval, whether to run each controllable appliance.
+A 30-minute, discrete-time simulator of household air-conditioning under a
+time-of-use tariff with a critical-peak-pricing (CPP) event. It asks one
+question: **if an LLM supplies only a price-blind, persona-conditioned comfort
+valuation, and Python applies the cost and a myopic "good-enough" halt, do the
+resulting households respond to price like people do? And how do their
+post-event rebound and comfort cost compare with optimising and rule-based
+controllers?**
 
-Three agents are compared:
+- The LLM returns a willingness-to-pay (WTP, $) for running the AC this
+  half-hour. It never sees a price and never does arithmetic.
+- Python computes `cost_now` and runs the appliance iff
+  `WTP × global_scale × archetype_factor ≥ cost_now`.
+- The same physics, tariff and households are run under four agents: MILP
+  (perfect-foresight cost minimiser), noisy-MILP (seeded heterogeneity),
+  a rule-based satisficer (WTP = k[orientation] × °C over the ceiling) and
+  the LLM satisficer.
 
-- **MILP** — a hyper-rational, PuLP-based cost-minimiser.
-- **Noisy-MILP** — the same MILP with seeded per-household heterogeneity
-  (jittered comfort bands, setpoints, deadlines), a strawman for "does trivial
-  randomness alone explain staggering and bounded elasticity?"
-- **LLM satisficing agent** (the thesis) — per appliance per interval, the LLM
-  returns a willingness-to-pay (WTP) for running the appliance now; Python
-  computes `U = wtp - cost_now` and applies a deterministic halt rule
-  (`run iff U >= 0`). The LLM never does arithmetic.
+The architecture, agent contracts and metrics are in
+[`../BUILD_SPEC.md`](../BUILD_SPEC.md). The pre-registration of the final run,
+with hypotheses H1–H4, limitations and deviations, is in
+[`docs/prereg_final_run_v1.md`](docs/prereg_final_run_v1.md).
 
-The headline result: the LLM's induced price elasticity should fall in the
-empirical human range (Conway 2020, Australia: −0.026 to −0.47) while avoiding
-the synchronised peak the MILP produces at scale.
+## Final runs
 
-See [`BUILD_SPEC.md`](../BUILD_SPEC.md) for the full implementation brief and
-`decision-memo-semester2.md` for the framing behind it. Values marked
-`CONFIRM` throughout the config are sensible placeholders that must be checked
-against a real source (Ausgrid tariff, appliance nameplate data, current model
-IDs) before results are reported.
+| Run | Model | Tag (code) | Results | Analysis |
+|---|---|---|---|---|
+| **Final run v1** (pre-registered) | `gemini-3.5-flash-lite` | `final-run-v1` → `560d7fb` | `results/phase3/final_v1/` | `results/phase3/final_v1/analysis/analysis.md` |
+| **Arm A** (pre-registered optional arm; model changed) | `gemini-3.8-flash` | `final-run-v1-arm-a` → `937907b` (run from `5851b05` on `arm-a`, same code) | `results/phase3/arm_a/` | `results/phase3/arm_a/analysis/analysis.md` |
+| Cross-model comparison (exploratory) | both | `main` | `results/phase3/cross_model/` | `cross_model.md`, `noise_test.md` |
+| Thesis figures and tables | both | `main` | `results/thesis_figures/` | `captions.md` |
 
-## Design principles
+Both runs use the same design: 24 SGSC households, HVAC only, a fixed ±2.0 °C
+band around 24 °C, 2013-01-18, and a CPP event from 17:00 to 20:00
+(0.55 → 1.20 $/kWh). The LLM runs at T = 0 with seed 42, and every response is
+cached. Every results folder is listed with its commit and status
+(final / pilot / ablation / superseded) in
+[`results/INDEX.md`](results/INDEX.md).
 
-1. **All numbers live in Python.** The LLM never does arithmetic — it returns
-   a subjective valuation; Python computes cost, compares, and decides.
-2. **Agents are interchangeable behind one interface.** The simulator loop
-   doesn't know which agent it's running; swapping MILP ↔ LLM is one config
-   line.
-3. **Everything is config-driven and seeded.** No magic numbers in source.
-   `config/experiment.yaml` fully determines a run; every run writes its
-   resolved config + seed into its results folder.
-4. **Every decision is logged.** For the LLM agent: prompt, WTP, reasoning,
-   computed cost, and run/defer decision — every appliance, every interval.
+## Reproducing the runs
+
+There are two ways to reproduce the runs.
+
+1. **Exact offline replay. No API calls; this is the recommended check.**
+   The committed caches (`results/phase3/llm_cache_final.jsonl`, 978 entries;
+   `results/phase3/llm_cache_arm_a.jsonl`, 1,034 entries) hold every LLM
+   response the runs used. The analysis re-simulates every household, agent
+   and day from the code. The LLM client is patched to raise on any cache miss
+   or cache write. The replay then asserts that it reproduces `curves.parquet`,
+   both decision logs and `summary.csv` **exactly**, before it derives anything.
+
+   ```bash
+   cd llm-hems
+   PYTHONPATH=src .venv/bin/python experiments/analyze_final_v1.py        # final run v1
+   PYTHONPATH=src .venv/bin/python experiments/analyze_final_v1.py \
+       --run-dir results/phase3/arm_a --cache-path results/phase3/llm_cache_arm_a.jsonl \
+       --cache-lines 1034 --label arm_a --level-matched                    # Arm A
+   PYTHONPATH=src .venv/bin/python experiments/analyze_cross_model.py     # cross-model tables
+   PYTHONPATH=src .venv/bin/python experiments/analyze_noise_test.py      # noise test
+   PYTHONPATH=src .venv/bin/python experiments/make_thesis_figures.py --check
+   ```
+
+   `make_thesis_figures.py --check` builds everything twice and requires
+   byte-identical output.
+
+2. **Re-launch from the tag, exactly as the run was launched.** The launch
+   scripts are archived in the results folders. They assume a separate clean
+   clone at `$HOME/thesis-run/llm-hems`, and their pre-flight checks abort
+   without side effects if the tree, cache size or output folder don't match.
+   New LLM calls are billed and, although they run at T = 0 with a fixed
+   seed, they are not guaranteed to match the cached responses. That is why
+   the cache is the record.
+
+   **Pinned environment:** Python 3.12.4 and `requirements-lock.txt`. The lock
+   file was committed in `ea45192`, after the `final-run-v1` tag, with no code
+   change. Prereg clarification 6 explains why. Keep the lock file outside the
+   clone so the tree stays clean.
+
+   ```bash
+   git clone <repo-url> ~/thesis-run && cd ~/thesis-run/llm-hems
+   git show main:llm-hems/requirements-lock.txt > ~/requirements-lock.txt
+   python3.12 -m venv .venv                      # 3.12.4
+   .venv/bin/pip install -r ~/requirements-lock.txt
+   .venv/bin/pip install -e . --no-deps
+   echo "GEMINI_API_KEY=..." > .env              # gitignored
+   ```
+
+   *Final run v1.* Check out the tag. At the tag, the cache holds the 191
+   pilot entries the pre-flight expects.
+
+   ```bash
+   git checkout final-run-v1
+   git show main:llm-hems/results/phase3/final_v1/launch_final_v1.sh > ~/launch_final_v1.sh
+   bash ~/launch_final_v1.sh
+   ```
+
+   *Arm A.* Arm A was launched from branch `arm-a` at `5851b05`. There,
+   `src/`, `experiments/` and `config/` are identical to tag
+   `final-run-v1-arm-a` (the pre-flight checks this). That commit also holds
+   the 167-entry pilot cache and the observe-only usage wrapper.
+
+   ```bash
+   git checkout -b arm-a 5851b05
+   git show main:llm-hems/results/phase3/arm_a/launch_arm_a.sh > ~/launch_arm_a.sh
+   bash ~/launch_arm_a.sh
+   ```
+
+   To re-launch **without any live calls**, run the same command with
+   `--cache-path` pointing at a copy of the full cache from `main`. Every
+   prompt then hits the cache. You have to skip the pre-flight's cache-size
+   check, because the full cache is larger than the 191 or 167 entries it
+   expects.
+
+Each run folder records `provenance.json` (commit, dirty flag, branch, argv,
+Python version), `config_resolved.yaml`, `run_meta.json`, the launch script
+and the log.
 
 ## Repository layout
 
 ```
-config/          appliances.yaml, tariff.yaml, household.yaml, experiment.yaml
-data/            raw/ (SGSC CSVs) and processed/ (cached parquet) — gitignored
+config/        tariff, appliances, household, persona, experiment.yaml (one file fixes a run)
+data/          raw/ (SGSC CSVs, gitignored); processed/ (24-household parquet, committed)
+docs/          prereg_final_run_v1.md
 src/hems/
-  environment/   tariff, appliance physics, household state, simulator loop
-  agents/        DecisionAgent interface + MILP / noisy-MILP / LLM / stub agents
-  llm/           provider-agnostic client + pydantic I/O schemas
-  analysis/      metrics, elasticity estimator, plots
-experiments/     run_single.py, run_population.py, calibrate.py
-results/         timestamped run folders — gitignored
-tests/           pytest suite mirroring src/hems/environment + analysis
+  environment/ tariff, RC thermal model + washer, household state, personas, simulator loop
+  agents/      DecisionAgent interface; stub, MILP, noisy-MILP, rule-based, LLM agents; prompts/
+  llm/         provider-agnostic client (Gemini, Matilda), disk cache, pydantic schemas
+  analysis/    metrics (PAR, peak), elasticity, plots
+  phase3.py    final-run harness (agents × households × base/CPP day × seeds, sharding)
+  phase3_report.py  per-household artifacts → summaries, report.md
+  provenance.py     commit / dirty / branch / argv into every results folder
+experiments/   run_phase3.py (final-run entry point), merge_shards.py, analyze_*.py,
+               make_thesis_figures.py, build_personas.py, fit_rule_based.py, earlier phase scripts
+results/       see results/INDEX.md
+tests/         pytest suite (physics, tariff, agents, client, harness, sharding)
 ```
 
-## Status
-
-Phases 0-2 implemented: tariff/appliance/household physics, the simulator
-loop, `stub`/`milp`/`noisy_milp`/`llm` agents, and analysis/plots all run
-end-to-end. The Phase 3 harness (personas, elasticity, calibration, budget
-gate) is built and verified on a dry run plus a two-household live slice; the
-full 24-household live run is waiting on budget sign-off (see below).
+## Setup and tests
 
 ```bash
-pip install -e .
-python experiments/run_single.py --agent stub
-python experiments/run_single.py --agent llm            # calls the live API
-python experiments/run_single.py --agent llm --dry-run  # no API spend
+cd llm-hems
+python3.12 -m venv .venv && .venv/bin/pip install -r requirements-lock.txt
+.venv/bin/pip install -e . --no-deps
+PYTHONPATH=src .venv/bin/python -m pytest -q
+PYTHONPATH=src .venv/bin/python experiments/run_phase3.py --dry-run --out results/phase3/dryrun   # stub LLM, zero spend
 ```
 
-## Phase 3: elasticity harness
-
-**Personas** (`config/persona.yaml` -> `experiments/build_personas.py` ->
-committed `config/persona_assignment.csv`). The generic schema is instantiated
-from SGSC data:
-- `cost_sensitivity` = energy burden (annual kWh x time-weighted tariff rate /
-  income-tier midpoint), bucketed into terciles as archetype A/B/C. The LLM
-  never sees it. It acts in Python as a WTP factor:
-  `effective_WTP = LLM_WTP x global_scale x archetype_factor`, set in
-  `experiment.yaml` -> `phase3.wtp_scaling` (default A/B/C = 1.3/1.0/0.7).
-- `thermal_tolerance` = comfort band (children or ducted ±1.5, split ±2.0, no
-  aircon ±2.5), plus the matching **comfort orientation**
-  (`comfort_prioritising` / `balanced` / `comfort_flexible`). The orientation
-  is the only persona the LLM sees: one sentence in the HVAC prompt, with no
-  price, cost or money wording. The numeric band still sets the MILP
-  constraint and the state that the prompt reports.
-- `schedule_profile` = washer window by load-shape cluster.
-
-Why the split: price-sensitivity wording in the prompt did not change the
-LLM's WTP (live slice). Comfort wording did give ordered WTP at T=0 (probe
-v3). So the LLM carries the comfort valuation and Python applies cost
-sensitivity. `experiments/sweep_comfort_scale.py` is the cheap check of this
-(6 households, HVAC only): results are in `results/phase3/comfort_sweep/`.
-
-The report is `results/phase3/persona/persona_report.md`.
-
-**Rule-based satisficer (no-LLM control).** `agents/rule_based_agent.py`
-swaps the LLM for a formula and keeps the same Python halt: HVAC
-`WTP = k[orientation] x max(0, T_in - ceiling)`, washer
-`WTP = w_max x (1 - slack / slack_at_release)`. `k` and `w_max` are fitted to
-the LLM's raw WTP by least squares through the origin
-(`experiments/fit_rule_based.py`) and frozen in `experiment.yaml` ->
-`rule_based:`. `experiments/run_rule_based.py` runs MILP, noisy-MILP and the
-rule on all 24 households with persona bands and with fixed ±2.0 bands. It
-makes zero API calls. Output is in `results/phase3/rule_based/`.
-
-**Thermal heterogeneity.** `experiment.yaml` -> `thermal_heterogeneity`
-gives each household its own seeded R and C multipliers (U(0.8, 1.2) each)
-and a starting indoor temperature of setpoint + U(-1, 1) C.
-`load_persona_environment` applies them, so all four agents run the same
-physics. The MILP also plans with them. Setting `enabled: false` reproduces
-the homogeneous runs exactly. `run_rule_based.py` writes the resolved values
-to `thermal_params.csv`.
-
-**Harness** (`src/hems/phase3.py`, `src/hems/phase3_report.py`,
-`experiments/run_phase3.py`, `experiments/merge_shards.py`; all settings in
-`experiment.yaml` -> `phase3:`, `llm:`, `thermal_heterogeneity:`,
-`rule_based:`). Four agents: MILP, noisy-MILP, the rule-based satisficer and
-the LLM. Each date is simulated twice, once with no CPP and once with one CPP
-event; only the tariff changes. `phase3.band_mode` is `fixed` (+/-2.0 C for
-everyone, primary) or `persona`. The LLM and the rule-based agent get the same
-WTP scaling: `global_scale` 1.0 x archetype factor (A 1.3 / B 1.0 / C 0.7);
-calibration is disabled. Seeds: LLM 42 only (T=0), noisy-MILP 42-44.
-
-Every run writes per-household raw artifacts (`curves.parquet`, decision
-logs, `scenario.csv`) and derives every summary from them
-(`phase3_report.finalize`): per agent, peak kW + time, PAR, 20:00-20:30 vs
-CPP-window load, comfort degree-hours + max exceedance, flexible and
-whole-household elasticity, daily flexible kWh change. Plus
-`config_resolved.yaml` and `provenance.json` (commit, dirty, branch, time).
-
-**Cost control:**
-- The LLM cache (`phase3.llm_cache_path`, now `llm_cache_final.jsonl`; override
-  with `--cache-path`) is append-only and keyed on provider, model,
-  temperature, seed, max_output_tokens, response-schema hash and exact prompt,
-  so a re-run makes zero live calls. Entries record the model version the API
-  returned and a timestamp; the decision log carries the model version per call.
-- Washer steps whose outcome Python already fixes (not yet released,
-  mid-cycle, done) skip the prompt.
-- `--dry-run` swaps in a stub LLM and writes `llm_projection.json` (projected
-  live calls against the cache, and the hard upper bound).
-- A live run over more than `live_slice.max_live_households` households
-  refuses to start without `--approve-budget`.
-- Retries, backoff, rate limit and model come from `llm:` in experiment.yaml.
-
-**Sharding:** run disjoint `--households` subsets into separate `--out`
-folders (live: separate `--cache-path` files), then merge; the merged
-summaries are identical to an unsharded run (`tests/test_sharding.py`).
-
-```bash
-python experiments/build_personas.py
-python experiments/run_phase3.py --dry-run --out results/phase3/dryrun       # all 24, zero spend
-python experiments/run_phase3.py --dry-run --households 8596070,9911140 --out results/phase3/s1
-python experiments/run_phase3.py --dry-run --households 8211127,10278838 --out results/phase3/s2
-python experiments/merge_shards.py results/phase3/s1 results/phase3/s2 --out results/phase3/merged
-```
-
-Note: if `import hems` fails in the venv on macOS, the editable-install
-`.pth` file has the `hidden` flag set, and Python 3.12 skips hidden `.pth`
-files. Either run with `PYTHONPATH=src` or run
+On macOS with Python 3.12, `import hems` can fail inside the venv because the
+editable-install `.pth` file carries the `hidden` flag. Either keep
+`PYTHONPATH=src` or run
 `chflags nohidden .venv/lib/python3.12/site-packages/__editable__.hems-0.1.0.pth`.
 
-## Reproducibility: the LLM agent
+## Cost and safety controls
 
-`llm/client.py` is a provider-agnostic client with two backends, selected by
-`llm.provider` in `config/experiment.yaml` (`--provider` overrides it per
-run):
+- The LLM cache is append-only JSONL. Its key is provider, model,
+  temperature, seed, max output tokens, response-schema hash and the exact
+  prompt, so a re-run with the same cache makes zero live calls. Entries
+  record the model version the API returned.
+- `--dry-run` swaps in a stub LLM and writes `llm_projection.json`, with the
+  projected live calls against the cache.
+- A live run over more than `live_slice.max_live_households` households
+  refuses to start without `--approve-budget`.
+- The response schema makes the model echo back the state it acted on. Echo
+  mismatches are logged as misreads: 0 in both final runs.
 
-- **matilda** -- Maincode's Matilda API, via the official `matilda-client`
-  Python SDK (**v0.3.0**, confirmed working **2026-09-06**). Matilda owns
-  model and provider routing internally -- its `chat.create_object` call
-  exposes no `model`, `temperature`, or `seed` parameter, so **neither the
-  model version nor the sampling behaviour behind a call is something this
-  codebase can pin or reproduce**. Two calls with byte-identical prompts are
-  not guaranteed to return the same `wtp`/`reason` (see the run-to-run
-  variance check in `experiments/phase2_diagnostics.py`).
-- **gemini** -- Google's `google-genai` SDK (**v2.22.0**) against the Gemini
-  Developer API. Model id is pinned and configurable
-  (`llm.gemini.model`, default `gemini-3.5-flash-lite` -- see the CONFIRM
-  note in `config/experiment.yaml` for why the flagship `gemini-3.6-flash`
-  isn't the default: its free tier caps at 20 requests/day per
-  project+model, which the reliability battery below exhausts by itself).
+## Model choice (2026-09-06 reliability battery)
 
-Every `LLMAgent` run records `provider` + `model_id` + `sdk_version` per
-decision-log row and in a `llm_meta.json` alongside the run's other outputs,
-so a result can always be traced back to the exact backend that produced it.
-For Matilda this is still just a fixed placeholder string (`model_id` is
-genuinely unavailable from the API); for Gemini it's the real pinned model
-id. Either way, anything reported from this agent should be read as *a*
-sample from the provider's current model, not a fixed, replayable
-computation -- `llm/client.py`'s disk cache (keyed on `(provider, prompt)`)
-makes a single run's results replayable, but a fresh (uncached) call is not
-guaranteed to match a prior one.
-
-### Model reliability battery (2026-09-06)
-
-Before any Phase 3 (elasticity) work, `experiments/phase2_diagnostics.py`
-found the LLM agent misreading its own input state in 3 of 4 controlled
-calls -- wrong comfort band, wrong indoor temp, an indoor/outdoor
-temperature mix-up, and an invented active CPP event when `is_cpp=no` was
-stated explicitly. In response: the prompt was hardened (state presented as
-a labelled block, one explicit comfort fact, an unambiguous CPP line,
-outdoor temperature dropped entirely), the response schema now requires the
-model to echo back the state it says it's acting on
-(`HVACWTPResponse`/`WasherWTPResponse` in `llm/schemas.py`), and
-`experiments/reliability_battery.py` runs a 26-call battery (18 synthetic
-HVAC state-reading contexts + the 8-call WTP price-invariance re-check) on
-both providers head-to-head. Results in
-`results/reliability_battery/battery_results.json`:
-
-| | Matilda | Gemini (`gemini-3.5-flash-lite`) |
-|---|---|---|
-| model id | not exposed by the API | `gemini-3.5-flash-lite` |
-| sdk version | `matilda-client==0.3.0` | `google-genai==2.22.0` |
-| misread rate (26 calls) | **38.5%** (10/26) | **0%** (0/26) |
-| fields that failed | indoor_temp_c 16.7%, comfort-band lower bound 16.7%, CPP flag 16.7% (state battery) | none |
-| HVAC WTP price-invariance range | $0.00 | $0.10 |
-| washer WTP price-invariance range | $2.00 (0 → 2.00 → 0 → 0 across the 4 prices -- non-monotonic, not a small residual) | $0.45 |
-
-**Recommendation: Gemini (`gemini-3.5-flash-lite`) as the primary model for
-Phase 3.** Matilda's misreads aren't random noise scattered across
-unimportant fields -- they cluster on the comfort-band edge and the CPP flag,
-which is exactly the state the discriminating scenario (BUILD_SPEC.md §12)
-and the elasticity estimator depend on getting right. Matilda's washer WTP
-also isn't price-invariant in practice ($2.00 swing on one price point),
-which cuts against the core "the LLM never does the cost comparison"
-assumption the halt rule relies on. Gemini had zero misreads across the
-battery and a much tighter price-invariance range on both appliances, and
-(unlike Matilda) its model id is actually pinned and reportable, which
-matters for a thesis result that needs to be traceable to a specific model.
-Caveat: `gemini-3.5-flash-lite` was used in place of the flagship
-`gemini-3.6-flash` purely because of the latter's 20-req/day free quota, not
-because it was chosen as materially better than the flagship -- both should
-be spot-checked again before Phase 3 if this codebase later moves to a paid
-tier or a multi-day run budget.
-
-## Phase plan
-
-| Phase | Scope | Definition of done |
-|---|---|---|
-| 0 | Ingest SGSC, select representative households, freeze config | `run_single.py --agent stub` completes on a real SGSC household and writes a load curve |
-| 1 | MILP + noisy-MILP on one household | MILP cost ≤ noisy-MILP ≤ (expected) LLM cost; unit tests pass |
-| 2 | LLM agent (primary + ablation model), both appliances | Decision log shows WTP + reason + U + decision for every step |
-| 3 | Calibrate WTP on a subset; elasticity on held-out; four-way overlay; multi-seed spread; discriminating scenario (§12) | Held-out elasticity printed against the Conway range; four-way overlay figure produced |
-| 4 (droppable) | Loop over N≈10–30 households → aggregate PAR / peak / rebound-peak | Aggregate PAR for MILP vs LLM over the population |
-
-## Stack
-
-Python 3.11+, `pulp`, `pandas`, `numpy`, `pydantic`, `matplotlib`, `pyyaml`,
-`pytest`, `ruff`, plus LLM provider SDKs behind `llm/client.py`. See
-[`requirements.txt`](requirements.txt).
-
-## Open items before reporting results
-
-- Exact current LLM model IDs (primary + ablation).
-- Real Ausgrid residential TOU numbers + a defensible CPP schedule.
-- Appliance nameplate params (HVAC kW/COP, RC values, washer kW/duration).
-- Final population size N.
+`experiments/reliability_battery.py` ran 26 calls: 18 synthetic HVAC
+state-reading contexts plus 8 price-invariance checks. The results are in
+`results/reliability_battery/battery_results.json`. Matilda misread its input
+state in 38.5% of calls (comfort band edge, indoor temperature, CPP flag), and
+its API exposes no model id, temperature or seed. `gemini-3.5-flash-lite`
+misread 0 of 26 and can be pinned, so it became the primary model.
+`gemini-3.8-flash` was then run as pre-registered Arm A.
