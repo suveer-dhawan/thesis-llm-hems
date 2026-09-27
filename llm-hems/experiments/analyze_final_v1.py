@@ -17,11 +17,25 @@ they don't record:
 Every table is labelled "pre-registered" or "exploratory (post-hoc)".
 
     PYTHONPATH=src .venv/bin/python experiments/analyze_final_v1.py
+
+Any other run of the same design (e.g. Arm A) is analysed with the same code:
+
+    PYTHONPATH=src .venv/bin/python experiments/analyze_final_v1.py \
+        --run-dir results/phase3/arm_a --cache-path results/phase3/llm_cache_arm_a.jsonl \
+        --cache-lines 1034 --label arm_a --level-matched
+
+The defaults reproduce final_v1's `analysis/` exactly. The model id is read from
+the run's own `config_resolved.yaml`. For a run other than final_v1 the prose
+summaries in analysis.md are generated from the data (final_v1 keeps its
+hand-checked wording). `--level-matched` (exploratory) additionally refits the
+rule-based k to this run's own LLM WTP and runs that agent offline.
 """
 
 from __future__ import annotations
 
+import argparse
 import hashlib
+import importlib.util
 import json
 import re
 from dataclasses import dataclass
@@ -37,16 +51,19 @@ import yaml  # noqa: E402
 
 from hems.agents.base import Decision, DecisionContext  # noqa: E402
 from hems.agents.llm_agent import LLMAgent, forced_washer_outcome, satisficing_halt  # noqa: E402
-from hems.agents.rule_based_agent import RuleBasedSatisficerAgent  # noqa: E402
+from hems.agents.rule_based_agent import RuleBasedParams, RuleBasedSatisficerAgent  # noqa: E402
 from hems.environment.simulator import run_simulation  # noqa: E402
 from hems.llm import client as llm_client  # noqa: E402
 from hems.phase3 import AGENTS, DayRun, Phase3Config, Phase3Runner  # noqa: E402
 from hems.phase3_report import agent_summary, curves_from_runs, logs_from_runs  # noqa: E402
 
+# Set by configure() (defaults = final run v1).
 RUN = Path("results/phase3/final_v1")
 OUT = RUN / "analysis"
 CACHE = Path("results/phase3/llm_cache_final.jsonl")
-CACHE_LINES = 978
+CACHE_LINES: int | None = 978
+LABEL = "final_v1"
+LEVEL_MATCHED = False
 N_BOOT = 10_000
 BOOT_SEED = 42
 DT_H = 0.5
@@ -63,9 +80,11 @@ EXP = "exploratory (post-hoc)"
 ORI_COLOR = {"comfort_prioritising": "#2a78d6", "balanced": "#eb6834",
              "comfort_flexible": "#1baf7a"}  # fmt: skip
 AGENT_COLOR = {"llm": "#2a78d6", "rule_based": "#eb6834", "milp": "#1baf7a",
-               "isotonic": "#eda100"}  # fmt: skip
+               "isotonic": "#eda100", "rule_based_lm": "#e87ba4"}  # fmt: skip
 AGENT_LABEL = {"llm": "LLM", "rule_based": "rule-based", "milp": "MILP",
-               "isotonic": "isotonic (counterfactual)"}  # fmt: skip
+               "isotonic": "isotonic (counterfactual)",
+               "rule_based_lm": "rule-based, level-matched to this run"}  # fmt: skip
+LM = "rule_based_lm"
 INK, INK2, GRID = "#0b0b0b", "#52514e", "#e4e3df"
 
 
@@ -123,14 +142,20 @@ def replay() -> tuple[Phase3Runner, pd.DataFrame, pd.DataFrame, pd.DataFrame, di
     """Re-simulate the whole run offline; return runner, curves, llm log, rule log, checks."""
     cache_hash = hashlib.sha256(CACHE.read_bytes()).hexdigest()
     n_lines = len(CACHE.read_text().splitlines())
-    assert n_lines == CACHE_LINES, f"cache has {n_lines} lines, expected {CACHE_LINES}"
+    assert CACHE_LINES is None or n_lines == CACHE_LINES, (
+        f"cache has {n_lines} lines, expected {CACHE_LINES}"
+    )
     _no_live_calls()
     _record_pre_decision_temp()
 
     resolved = yaml.safe_load((RUN / "config_resolved.yaml").read_text())
     cfg = Phase3Config.from_yaml("config/experiment.yaml", band_mode="fixed",
                                  cache_path=str(CACHE))  # fmt: skip
+    # the model id is part of the cache key: take it from the run itself
+    provider = resolved["llm"]["provider"]
+    cfg.llm_cfg[provider]["model"] = resolved["llm"][provider]["model"]
     assert cfg.resolved()["phase3"] == resolved["phase3"], "config differs from the run's"
+    assert cfg.resolved()["llm"] == resolved["llm"], "LLM config differs from the run's"
     runner = Phase3Runner(cfg)
     offline_client = {}
 
@@ -706,6 +731,72 @@ def run_isotonic(runner: Phase3Runner, fit: IsotonicFit, ids) -> pd.DataFrame:
 
 
 # --------------------------------------------------------------------------
+# 7b. level-matched rule-based agent (exploratory fairness control)
+# --------------------------------------------------------------------------
+
+
+def _fit_rule_based_module():
+    """experiments/fit_rule_based.py, imported for its exact fitting code."""
+    path = Path(__file__).with_name("fit_rule_based.py")
+    spec = importlib.util.spec_from_file_location("fit_rule_based", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def fit_level_matched(llm_log: pd.DataFrame, curves: pd.DataFrame,
+                      personas: pd.DataFrame) -> tuple[dict, pd.DataFrame]:  # fmt: skip
+    """Refit k[orientation] to this run's own LLM WTP with the method that produced the
+    frozen k (`fit_rule_based.fit_hvac`: least squares through the origin of raw WTP on
+    max(0, indoor shown in the prompt - ceiling), one row per distinct prompt)."""
+    ceiling = curves.groupby("household_id")["band_hi_c"].first()
+    assert ceiling.nunique() == 1, "level-matching assumes the fixed band"
+    log = llm_log.assign(
+        band_hi_c=llm_log["household_id"].map(ceiling),
+        comfort_orientation=llm_log["household_id"].map(
+            personas.set_index("customer_ID")["comfort_orientation"]),
+    )  # fmt: skip
+    fit = _fit_rule_based_module().fit_hvac(log)
+    frozen = RuleBasedParams.from_yaml(band_mode="fixed").k_by_orientation
+    rows = [{"orientation": o, "k_level_matched": round(fit[o]["k"], 3), "k_exact": fit[o]["k"],
+             "k_frozen_fixed_band": frozen[o], **{k: v for k, v in fit[o].items() if k != "k"}}
+            for o in ORIENTATIONS]  # fmt: skip
+    # rounded to 3 dp, as the frozen config values are
+    return {o: round(fit[o]["k"], 3) for o in ORIENTATIONS}, pd.DataFrame(rows)
+
+
+def run_rule_based(runner: Phase3Runner, k: dict, ids, name: str) -> pd.DataFrame:
+    """The rule-based satisficer with the given k, all households, both days (no LLM)."""
+    cfg = runner.cfg
+    params = RuleBasedParams(k_by_orientation=dict(k), w_max=runner.rule_params.w_max)
+    runs = []
+    for hid in ids:
+        household, hvac, washer = runner.env(hid)
+        for date in cfg.dates:
+            for label in ("base", "cpp"):
+                agent = RuleBasedSatisficerAgent(params, cfg.global_scale, runner.wtp_factor(hid))
+                res = run_simulation(household, runner.tariff_for(date, label), hvac, washer,
+                                     agent, date)  # fmt: skip
+                runs.append(DayRun(hid, name, cfg.primary_seed, cfg.global_scale, date, label,
+                                   res))  # fmt: skip
+    orientation = runner.assignment.set_index("customer_ID")["comfort_orientation"].to_dict()
+    return curves_from_runs(runs, runner.archetype, orientation.get)
+
+
+def level_matched(runner: Phase3Runner, llm_log, curves, personas, ids):
+    """Fit + run the level-matched agent. The same code path with the frozen k must
+    reproduce the saved rule-based curves exactly (checked here)."""
+    from hems.phase3_report import CURVE_SORT
+
+    frozen = run_rule_based(runner, runner.rule_params.k_by_orientation, ids, "rule_based")
+    saved = _sort(curves[curves["agent"] == "rule_based"], CURVE_SORT)
+    pd.testing.assert_frame_equal(_sort(frozen, CURVE_SORT)[saved.columns], saved,
+                                  check_exact=True, check_dtype=False)  # fmt: skip
+    k, fit = fit_level_matched(llm_log, curves, personas)
+    return k, fit, run_rule_based(runner, k, ids, LM)
+
+
+# --------------------------------------------------------------------------
 # 8. rebound_delta_kw
 # --------------------------------------------------------------------------
 
@@ -714,7 +805,7 @@ def rebound_check(curves: pd.DataFrame) -> pd.DataFrame:
     """Recompute rebound_peak_kw (20:00-22:00 peak of the population total) per day,
     the saved cpp-minus-base delta, and an energy-based alternative."""
     rows = []
-    for agent in ["milp", "noisy_milp", "rule_based", "llm", "isotonic"]:
+    for agent in ["milp", "noisy_milp", "rule_based", "llm", "isotonic", LM]:
         a = curves[(curves["agent"] == agent) & (curves["seed"] == 42)]
         if a.empty:
             continue
@@ -759,6 +850,11 @@ def compute() -> dict:
     iso_curves = run_isotonic(runner, fit, ids)
     T["iso_fit"], T["iso_fit_steps"] = fit, fit_steps
     allc = pd.concat([curves, iso_curves], ignore_index=True)
+    lm = []
+    if LEVEL_MATCHED:  # exploratory fairness control
+        T["lm_k"], T["lm_fit"], lm_curves = level_matched(runner, llm_log, curves, personas, ids)
+        allc = pd.concat([allc, lm_curves], ignore_index=True)
+        lm = [LM]
     prim = allc[allc["seed"] == runner.cfg.primary_seed]
     T["curves"] = allc
 
@@ -781,20 +877,20 @@ def compute() -> dict:
     T["h1_dedup_n"] = {"decisions": len(dl), "distinct_prompts": len(dedup),
                        "distinct_across_households": int(
                            dl.groupby("prompt")["household_id"].nunique().gt(1).sum())}
-    T["elasticity"] = elasticity_by(rec, "comfort_orientation", agents3 + ["isotonic"])
+    T["elasticity"] = elasticity_by(rec, "comfort_orientation", agents3 + ["isotonic"] + lm)
     ch = comfort_per_household(prim)
     T["comfort_hh"] = ch
-    T["comfort_ori"] = comfort_by(ch, "comfort_orientation", ["llm", "rule_based", "isotonic"])
-    T["comfort_arch"] = comfort_by(ch, "archetype", ["llm", "rule_based", "isotonic"])
+    T["comfort_ori"] = comfort_by(ch, "comfort_orientation", ["llm", "rule_based", "isotonic"] + lm)
+    T["comfort_arch"] = comfort_by(ch, "archetype", ["llm", "rule_based", "isotonic"] + lm)
     T["comfort_gt25"] = ch[(ch["max_exceedance_c"] > 2.5)].sort_values(
         ["agent", "day", "max_exceedance_c"], ascending=[True, True, False])
-    T["ori_x_arch"] = ori_x_archetype(rec, agents3)
+    T["ori_x_arch"] = ori_x_archetype(rec, agents3 + lm)
     T["thresholds"] = halt_thresholds(dl, factors)
     T["hvac_window_hh"] = rec[rec["agent"].isin(["llm", "rule_based"])][
         ["agent", "household_id", "comfort_orientation", "archetype", "q_base_hvac", "q_cpp_hvac"]
     ].sort_values(["agent", "archetype", "comfort_orientation", "household_id"])
-    T["switch"] = switch_on(prim, ["llm", "rule_based", "isotonic"])
-    T["post_ori"] = post_by_orientation(prim, ["llm", "rule_based", "milp", "isotonic"])
+    T["switch"] = switch_on(prim, ["llm", "rule_based", "isotonic"] + lm)
+    T["post_ori"] = post_by_orientation(prim, ["llm", "rule_based", "milp", "isotonic"] + lm)
     T["mono_hh"], T["mono"] = monotonicity(dl, "over_c")
     T["mono_hh_shown"], T["mono_shown"] = monotonicity(dl, "shown_over_c")
     T["discord"] = discordance(dl)
@@ -803,7 +899,8 @@ def compute() -> dict:
 
     resolved = yaml.safe_load((RUN / "config_resolved.yaml").read_text())
     summ = agent_summary(allc, resolved)
-    T["cf_summary"] = summ[(summ["seed"] == 42) & summ["agent"].isin(agents3 + ["isotonic"])]
+    T["cf_summary"] = summ[(summ["seed"] == 42) & summ["agent"].isin(agents3 + ["isotonic"] + lm)]
+    T["summary_all"] = summ
 
     csvs = {"h1_wtp_by_orientation_bin": T["h1"], "h1_pooled_above_ceiling": T["h1_pooled"],
             "h1_wtp_by_orientation_bin_base_day_only": T["h1_base_only"],
@@ -819,6 +916,8 @@ def compute() -> dict:
             "isotonic_fit_steps": fit_steps, "counterfactual_summary": T["cf_summary"],
             "rebound_check": T["rebound"],
             "llm_decisions_with_state": dl.drop(columns=["prompt", "reason", "misreads"])}  # fmt: skip
+    if LEVEL_MATCHED:
+        csvs["level_matched_fit"] = T["lm_fit"]
     for name, df in csvs.items():
         df.to_csv(OUT / f"{name}.csv", index=False)
     (OUT / "replay_check.json").write_text(json.dumps(
@@ -1341,10 +1440,404 @@ def write_md(T) -> None:
     (OUT / "analysis.md").write_text("\n".join(L))
 
 
+# --------------------------------------------------------------------------
+# 10b. analysis.md for any other run: same tables, prose generated from the data
+# --------------------------------------------------------------------------
+
+
+def _rng(vals, nd=2) -> str:
+    v = [x for x in vals if not np.isnan(x)]
+    return f"{min(v):.{nd}f} to {max(v):.{nd}f}" if v else "–"
+
+
+def _h1_robust_ok(T) -> bool:
+    return all(h1_verdict(t, "")[["order_holds_point", "prio-bal_CI_excl_0",
+                                  "bal-flex_CI_excl_0"]].all().all()
+               for t in (T["h1_base_only"], T["h1_dedup"]))  # fmt: skip
+
+
+def write_md_generic(T) -> None:
+    c = T["checks"]
+    h1, e, cf, reb = T["h1"], T["elasticity"], T["cf_summary"].set_index("agent"), T["rebound"]
+    mono = T["mono"].set_index("group")
+    sw = T["switch"]
+    cpp_sw = sw[sw["day"] == "cpp"]
+    at20 = cpp_sw[cpp_sw["first_switch_on_after_20"] == "20:00"].groupby("agent").size()
+    ev = e.set_index(["agent", "comfort_orientation"])
+    dl = T["decisions_llm"]
+    resolved = yaml.safe_load((RUN / "config_resolved.yaml").read_text())
+    model = resolved["llm"][resolved["llm"]["provider"]]["model"]
+    prov = json.loads((RUN / "provenance.json").read_text())
+    lm = LEVEL_MATCHED
+    agents_c = ["llm", "rule_based", "isotonic"] + ([LM] if lm else [])
+
+    # H1 facts
+    ha = h1[h1["side"] == "above"]
+    ok = ha.dropna(subset=["prioritising_mean_wtp", "balanced_mean_wtp", "flexible_mean_wtp"])
+    v = h1_verdict(h1, "")
+    bf = ha.dropna(subset=["balanced_mean_wtp", "flexible_mean_wtp"])
+    bf_pos = int((bf["balanced_mean_wtp"] > bf["flexible_mean_wtp"]).sum())
+    bf_ci = int((bf["bal_minus_flex"].str.extract(r"\[([-\d.]+),")[0].astype(float) > 0).sum())
+    below = dl[dl["over_c"] <= 0].groupby("orientation")["wtp"].mean()
+    prio_max = dl.loc[dl["orientation"] == "comfort_prioritising", "over_c"].max()
+    # comfort facts
+    ch = T["comfort_hh"]
+    gt = T["comfort_gt25"]
+    gl = gt[gt["agent"] == "llm"]
+    base_gt = sorted(gl.loc[gl["day"] == "base", "household_id"].unique())
+    cori = T["comfort_ori"]
+    dh = lambda a, d, g: cori[(cori["agent"] == a) & (cori["day"] == d)  # noqa: E731
+                              & (cori["comfort_orientation"] == g)]["degree_hours_mean"].iloc[0]
+    # archetype facts
+    rec = T["records"]
+    e_arch = {(a, x): pooled_e(r["q_base_hvac"], r["q_cpp_hvac"])
+              for (a, x), r in rec.groupby(["agent", "archetype"])}  # fmt: skip
+    thr = T["thresholds"].set_index("archetype")
+    personas = pd.read_csv(RUN / "personas_used.csv")
+    flex_a = int(((personas["comfort_orientation"] == "comfort_flexible")
+                  & (personas["archetype"] == "A")).sum())  # fmt: skip
+    prio_a = int(((personas["comfort_orientation"] == "comfort_prioritising")
+                  & (personas["archetype"] == "A")).sum())  # fmt: skip
+    # rebound / WTP facts
+    po = T["post_ori"]
+    flex_share = po[(po["day"] == "cpp") & (po["orientation"] == "flexible")].set_index("agent")[
+        "share_of_agent_post_hvac"]
+    wv = T["wtp_values"]
+    top = wv.sort_values("all", ascending=False).head(3)
+    dis = T["discord"]
+    mr = reb.set_index("agent")
+
+    L = [
+        f"# {LABEL} — post-run analysis",
+        "",
+        f"Generated by `experiments/analyze_final_v1.py --label {LABEL}` from the saved artifacts "
+        f"in `{RUN}/` (model `{model}`; run commit `{prov['commit'][:7]}` on branch "
+        f"`{prov['branch']}`). Same code, tables and bootstrap as the final_v1 analysis; the "
+        "prose summaries here are generated from the numbers (the final_v1 analysis carries "
+        f"hand-checked wording). No live LLM calls: every LLM answer is replayed from `{CACHE}`, "
+        "with the client patched to raise on any cache miss or write. Nothing outside "
+        "`analysis/` was written.",
+        "",
+        "Every result is labelled **pre-registered** or **exploratory (post-hoc)**. For a "
+        "pre-registered optional arm (docs/prereg_final_run_v1.md, *Optional arms* and "
+        "*Deviations*) the pre-registered metrics and H1 keep that label; everything the final_v1 "
+        "analysis labelled exploratory stays exploratory. Bootstrap CIs: households resampled "
+        f"with replacement, {N_BOOT:,} draws, seed {BOOT_SEED}, percentile 95% intervals. n per "
+        "orientation is imbalanced (prioritising 5 / balanced 8 / flexible 11).",
+        "",
+        "## 0. Offline regeneration",
+        "",
+        "Every household × agent × seed × day was re-simulated from the current code with the "
+        f"run's own model id (`{model}`, read from `config_resolved.yaml`) and the LLM replayed "
+        "from the run's cache. All checks below must hold before anything else is computed.",
+        "",
+        md(pd.DataFrame([
+            (f"curves.parquet reproduced exactly ({c['curves_rows']:,} rows)", c["curves_identical"]),
+            (f"llm_decision_log reproduced exactly ({c['llm_log_rows']:,} rows)", c["llm_log_identical"]),
+            ("rule_decision_log reproduced exactly", c["rule_log_identical"]),
+            ("summary.csv recomputed from replay identical", c["summary_csv_identical"]),
+            ("live LLM calls during replay", c["live_calls"]),
+            ("cache hits during replay", c["cache_hits"]),
+            ("cache file unchanged (sha256 before = after)", c["cache_unchanged"]),
+            ("max |prompt temperature − replayed pre-decision temperature| (°C)",
+             round(T["pretemp_vs_prompt_max_abs_err"], 4)),
+        ], columns=["check", "result"])),
+        "",
+        "## 1. H1 — LLM raw WTP by comfort orientation at matched temperature  *(pre-registered)*",
+        "",
+        "Raw LLM WTP (before archetype factor), both days pooled, 0.5 °C bins of exact "
+        "pre-decision °C above the 26 °C ceiling (right-closed). Decision-weighted bin means; CI "
+        "resamples households within orientation; differences resample each orientation "
+        "independently.",
+        "",
+        md(h1[H1_COLS]),
+        "",
+        "### H1 robustness  *(exploratory (post-hoc) robustness check; same bins and bootstrap)*",
+        "",
+        "(a) Baseline day only:",
+        "",
+        md(T["h1_base_only"][H1_COLS]),
+        "",
+        f"(b) One decision per distinct prompt ({T['h1_dedup_n']['distinct_prompts']:,} of "
+        f"{T['h1_dedup_n']['decisions']:,}; first occurrence household → baseline → time):",
+        "",
+        md(T["h1_dedup"][H1_COLS]),
+        "",
+        "Ordering check in bins where all three orientations are observed:",
+        "",
+        md(pd.concat([h1_verdict(h1, "pooled (pre-registered)"),
+                      h1_verdict(T["h1_base_only"], "(a) base day only"),
+                      h1_verdict(T["h1_dedup"], "(b) distinct prompts")], ignore_index=True), 2),
+        "",
+        "All above-ceiling decisions per orientation (not temperature-matched; context only):",
+        "",
+        md(T["h1_pooled"]),
+        "",
+        f"**Summary.** At or below the ceiling mean WTP is "
+        f"{below.get('comfort_prioritising', np.nan):.3f} (prioritising) / "
+        f"{below.get('balanced', np.nan):.3f} (balanced) / "
+        f"{below.get('comfort_flexible', np.nan):.3f} (flexible). Above it, all three "
+        f"orientations are observed in {len(ok)} bin(s) ({', '.join(ok['C_above_ceiling'])}); "
+        f"the order prioritising > balanced ≥ flexible holds at the point estimate in "
+        f"{int(v['order_holds_point'].sum())} of {len(v)}, prioritising − balanced has a CI "
+        f"above zero in {int(v['prio-bal_CI_excl_0'].sum())} and balanced − flexible in "
+        f"{int(v['bal-flex_CI_excl_0'].sum())}. Prioritising households never get more than "
+        f"{prio_max:.2f} °C over; across all {len(bf)} above-ceiling bins with balanced and "
+        f"flexible, balanced > flexible in {bf_pos} (CI above zero in {bf_ci}). "
+        + ("Robustness: base-day-only and distinct-prompt variants leave the ordering and both "
+           "CI exclusions unchanged in every testable bin." if _h1_robust_ok(T) else
+           "Robustness: the ordering or a CI exclusion changes in at least one robustness "
+           "variant — see the ordering check."),
+        "",
+        "## 2. Per-orientation elasticity  *(exploratory, post-hoc)*",
+        "",
+        "Pooled arc elasticity (Σ CPP-window kWh, base method) over households in the group; "
+        "primary seed. `isotonic` = item-7 counterfactual"
+        + ("; `rule_based_lm` = item 7b." if lm else "."),
+        "",
+        md(e[["agent", "comfort_orientation", "n", "e_hvac_ci", "e_total_ci",
+              "q_base_hvac_kwh", "q_cpp_hvac_kwh"]]),
+        "",
+        "**Summary.** LLM HVAC elasticity: " + ", ".join(
+            f"{ORI_SHORT[o]} {ev.loc[('llm', o), 'e_hvac']:.2f}" for o in ORIENTATIONS)
+        + f" (all {ev.loc[('llm', 'all'), 'e_hvac']:.2f}); rule-based: " + ", ".join(
+            f"{ORI_SHORT[o]} {ev.loc[('rule_based', o), 'e_hvac']:.2f}" for o in ORIENTATIONS)
+        + f" (all {ev.loc[('rule_based', 'all'), 'e_hvac']:.2f}); MILP "
+        f"{_rng([ev.loc[('milp', o), 'e_hvac'] for o in ORIENTATIONS])} across orientations. "
+        f"Orientation is confounded with archetype ({flex_a} of 11 flexible households are "
+        f"archetype A, {prio_a} prioritising), so these are not clean orientation effects.",
+        "",
+        "## 3. Comfort per household  *(metrics pre-registered; breakdowns and the > 2.5 °C list "
+        "exploratory)*",
+        "",
+        "Degree-hours = Σ max(0, indoor − 26 °C) × 0.5 h per household-day (end-of-step "
+        "temperatures); mean over households with bootstrap CI. MILP is 0 everywhere.",
+        "",
+        "By orientation:",
+        "",
+        md(T["comfort_ori"], 2),
+        "",
+        "By archetype:",
+        "",
+        md(T["comfort_arch"], 2),
+        "",
+        "Household-days with max exceedance > 2.5 °C:",
+        "",
+        md(gt[["agent", "household_id", "day", "comfort_orientation", "archetype",
+               "max_exceedance_c", "degree_hours", "steps_above"]], 2),
+        "",
+        "**Summary.** LLM mean degree-hours on the CPP day: " + ", ".join(
+            f"{ORI_SHORT[o]} {dh('llm', 'cpp', o)}" for o in ORIENTATIONS)
+        + f" (rule-based: " + ", ".join(
+            f"{ORI_SHORT[o]} {dh('rule_based', 'cpp', o)}" for o in ORIENTATIONS) + "). "
+        + " ".join(
+            f"{AGENT_LABEL[a]}: {int((gt['agent'] == a).sum())} household-days > 2.5 °C "
+            f"({int(((gt['agent'] == a) & (gt['day'] == 'base')).sum())} on the baseline day)."
+            for a in agents_c)
+        + (f" LLM households above 2.5 °C already on the baseline day (so not caused by the CPP "
+           f"event): {', '.join(map(str, base_gt))}." if base_gt else ""),
+        "",
+        "## 4. Archetype decomposition and halt bands  *(exploratory, post-hoc)*",
+        "",
+        "Orientation × archetype, pooled HVAC elasticity (n = households):",
+        "",
+        md(T["ori_x_arch"]),
+        "",
+        "Halt: run iff WTP × factor ≥ 2 kW × 0.5 h × rate, so a 17:00–20:00 decision responds "
+        "to CPP only if raw WTP is in [0.55 / factor, 1.20 / factor). LLM WTPs given in that "
+        "window:",
+        "",
+        md(T["thresholds"]),
+        "",
+        _details("Per-household HVAC kWh, 17:00–20:00, baseline vs CPP (LLM and rule-based)",
+                 md(T["hvac_window_hh"])),
+        "",
+        "**Summary.** Pooled LLM HVAC elasticity by archetype: " + ", ".join(
+            f"{x} {e_arch.get(('llm', x), np.nan):.2f}" for x in ARCHETYPES)
+        + " (rule-based: " + ", ".join(
+            f"{x} {e_arch.get(('rule_based', x), np.nan):.2f}" for x in ARCHETYPES) + "). "
+        "Baseline-day LLM decisions in 17:00–20:00 whose raw WTP falls in the price-responsive "
+        "band: " + ", ".join(
+            f"{x} {thr.loc[x, 'base_day_decisions_in_responsive_band']} "
+            f"(band ${thr.loc[x, 'run_at_peak_if_wtp>=']:.2f}–{thr.loc[x, 'run_at_cpp_if_wtp>=']:.2f})"
+            for x in ARCHETYPES)
+        + ". An archetype responds only to the extent the LLM's WTP values land inside its band.",
+        "",
+        "## 5. Rebound mechanism, CPP day  *(exploratory, post-hoc)*",
+        "",
+        "AC state at steps 38–43 (19:00–21:30; 1 = on) and first off→on switch at or after "
+        "20:00. Rate after the event: 0.55 until 21:00, then 0.28, 0.22 from 22:00.",
+        "",
+        _details("Per household, CPP day",
+                 md(cpp_sw.sort_values(["agent", "orientation", "household_id"])[
+                     ["agent", "household_id", "orientation", "archetype", "ac_19:00-21:30 (t38-43)",
+                      "indoor_at_20:00_c", "first_switch_on_after_20", "hvac_kw_20:00",
+                      "hvac_kwh_20-22"]], 2)),
+        "",
+        "Switch-on time distribution (households; both days):",
+        "",
+        md(pd.crosstab([sw["agent"], sw["day"]], sw["first_switch_on_after_20"]).reset_index()),
+        "",
+        "Post-CPP contribution by orientation:",
+        "",
+        md(T["post_ori"]),
+        "",
+        "**Summary.** On the CPP day, households switching on at 20:00: " + ", ".join(
+            f"{AGENT_LABEL[a]} {int(at20.get(a, 0))}" for a in agents_c)
+        + " (of 24). Flexible households' share of the agent's 20:00–20:30 HVAC load: " + ", ".join(
+            f"{AGENT_LABEL[a]} {flex_share.get(a, np.nan):.0%}" for a in agents_c + ["milp"]) + ".",
+        "",
+        "## 6. WTP non-monotonicity  *(pre-registered as descriptive under H4; rate definition "
+        "post-hoc)*",
+        "",
+        "Consecutive steps where °C above ceiling rises and both are above the ceiling; rate = "
+        "share where WTP falls. Upper: exact temperature; lower: the 0.1 °C value shown.",
+        "",
+        md(T["mono"]),
+        "",
+        md(T["mono_shown"]),
+        "",
+        _details("Per household-day (rows with ≥ 1 fall)",
+                 md(T["mono_hh"][T["mono_hh"]["wtp_fell"] > 0])),
+        "",
+        "Across all above-ceiling decisions within an orientation (pairs with different "
+        "temperature): share where the hotter one got the lower WTP, and share with equal WTP.",
+        "",
+        md(T["discord"]),
+        "",
+        f"Distinct raw WTP values (all {len(dl):,} HVAC decisions):",
+        "",
+        md(wv, 3),
+        "",
+        f"**Summary.** {len(wv)} distinct WTP values; the top three "
+        f"({', '.join(f'${x:g}' for x in top['raw_wtp_$'])}) make up "
+        f"{top['share_all'].sum():.0%} of decisions. Above the ceiling, WTP falls as the house "
+        f"heats {mono.loc['all', 'wtp_fell']} times in {mono.loc['all', 'pairs']} "
+        f"({mono.loc['all', 'fall_rate']}); by orientation " + ", ".join(
+            f"{ORI_SHORT[o]} {mono.loc[o, 'wtp_fell']}/{mono.loc[o, 'pairs']}" for o in ORIENTATIONS)
+        + ". Shown-value rate: " + T["mono_shown"].set_index("group").loc["all", "fall_rate"]
+        + f". Cross-sectionally, {_rng(dis['hotter_lower_wtp_share'] * 100, 0)}% of pairs have "
+        f"the hotter state valued lower and {_rng(dis['hotter_equal_wtp_share'] * 100, 0)}% equal.",
+        "",
+        "## 7. Counterfactual: monotone version of the LLM's own valuation  *(exploratory, "
+        "post-hoc)*",
+        "",
+        "Per orientation, an isotonic (pool-adjacent-violators) fit of raw LLM WTP on exact °C "
+        "above ceiling over all LLM HVAC decisions, run as an agent through the same halt, "
+        "factor, simulator, tariffs and households. No LLM. In-sample; it visits states the LLM "
+        "did not.",
+        "",
+        md(cf.reset_index()[["agent", "cpp_post_20:00-20:30_kw", "cpp_cpp_window_mean_kw",
+                             "cpp_post_over_cpp_ratio", "base_post_over_cpp_ratio",
+                             "base_par", "cpp_par",
+                             "base_degree_hours_above_ceiling", "cpp_degree_hours_above_ceiling",
+                             "base_max_exceedance_c", "cpp_max_exceedance_c",
+                             "elasticity_flexible", "elasticity_total"]]),
+        "",
+        _details("Fitted step function (isotonic_fit_steps.csv)", md(T["iso_fit_steps"], 4)),
+        "",
+        f"**Summary.** CPP-day post/CPP ratio: isotonic "
+        f"{cf.loc['isotonic', 'cpp_post_over_cpp_ratio']:.3f}, LLM "
+        f"{cf.loc['llm', 'cpp_post_over_cpp_ratio']:.3f}, rule-based "
+        f"{cf.loc['rule_based', 'cpp_post_over_cpp_ratio']:.3f}, MILP "
+        f"{cf.loc['milp', 'cpp_post_over_cpp_ratio']:.3f}. HVAC elasticity isotonic "
+        f"{cf.loc['isotonic', 'elasticity_flexible']:.3f} vs LLM "
+        f"{cf.loc['llm', 'elasticity_flexible']:.3f}; CPP-day degree-hours (Σ 24 households) isotonic "
+        f"{cf.loc['isotonic', 'cpp_degree_hours_above_ceiling']:.1f} vs LLM "
+        f"{cf.loc['llm', 'cpp_degree_hours_above_ceiling']:.1f}; CPP-day max exceedance "
+        f"{cf.loc['isotonic', 'cpp_max_exceedance_c']:.2f} vs "
+        f"{cf.loc['llm', 'cpp_max_exceedance_c']:.2f} °C.",
+        "",
+    ]
+    if lm:
+        fit = T["lm_fit"]
+        L += [
+            "## 7b. Level-matched rule-based agent  *(exploratory, post-hoc fairness control)*",
+            "",
+            "The run's rule-based agent uses k frozen before the run, fitted to "
+            "gemini-3.5-flash-lite's WTP in the comfort sweeps. Here k is refitted to **this "
+            "run's** LLM WTP by the same method (`experiments/fit_rule_based.py::fit_hvac`: least "
+            "squares through the origin of raw WTP on max(0, indoor shown in the prompt − 26 °C), "
+            "one row per distinct prompt, per orientation; fixed ±2.0 band; rounded to 3 dp as "
+            "the frozen values are). The agent then runs offline on all 24 households, both "
+            "days, through the same halt and archetype factors. The same code path with the "
+            "frozen k reproduces the saved rule-based curves exactly (checked).",
+            "",
+            md(fit, 4),
+            "",
+            md(cf.reset_index().set_index("agent").loc[["llm", LM, "rule_based"]].reset_index()[
+                ["agent", "cpp_post_over_cpp_ratio", "base_par", "cpp_par",
+                 "cpp_degree_hours_above_ceiling", "cpp_max_exceedance_c",
+                 "elasticity_flexible", "elasticity_total"]]),
+            "",
+            "Per-orientation elasticity and comfort for `rule_based_lm` are in items 2 and 3.",
+            "",
+            f"**Summary.** Level-matched k = " + " / ".join(
+                f"{T['lm_k'][o]:.3f}" for o in ORIENTATIONS)
+            + " (prioritising / balanced / flexible) vs frozen " + " / ".join(
+                f"{x:.3f}" for x in fit["k_frozen_fixed_band"]) + ". "
+            f"Against the LLM: post/CPP ratio {cf.loc[LM, 'cpp_post_over_cpp_ratio']:.3f} vs "
+            f"{cf.loc['llm', 'cpp_post_over_cpp_ratio']:.3f}; HVAC elasticity "
+            f"{cf.loc[LM, 'elasticity_flexible']:.3f} vs "
+            f"{cf.loc['llm', 'elasticity_flexible']:.3f}; CPP-day degree-hours (Σ 24 households) "
+            f"{cf.loc[LM, 'cpp_degree_hours_above_ceiling']:.1f} vs "
+            f"{cf.loc['llm', 'cpp_degree_hours_above_ceiling']:.1f}; CPP-day max exceedance "
+            f"{cf.loc[LM, 'cpp_max_exceedance_c']:.2f} vs "
+            f"{cf.loc['llm', 'cpp_max_exceedance_c']:.2f} °C.",
+            "",
+        ]
+    L += [
+        "## 8. `rebound_delta_kw`  *(exploratory, diagnostic)*",
+        "",
+        "`rebound_delta_kw` = peak kW of 20:00–22:00 on the CPP day − the same on the baseline "
+        "day (one number per agent, printed on both day rows of `load_metrics.csv`; see the "
+        "final_v1 analysis, item 8, for why it is not a common-scale rebound measure). The "
+        "HVAC-energy difference for 20:00–22:00 (last column) is the more robust quantity.",
+        "",
+        md(reb),
+        "",
+        f"MILP: {mr.loc['milp', 'cpp_rebound_peak_kw']:.3f} kW (CPP, "
+        f"{mr.loc['milp', 'cpp_peak_step']}) − {mr.loc['milp', 'base_rebound_peak_kw']:.3f} kW "
+        f"(baseline, {mr.loc['milp', 'base_peak_step']}); LLM: "
+        f"{mr.loc['llm', 'cpp_rebound_peak_kw']:.3f} ({mr.loc['llm', 'cpp_peak_step']}) − "
+        f"{mr.loc['llm', 'base_rebound_peak_kw']:.3f} ({mr.loc['llm', 'base_peak_step']}).",
+        "",
+        "## 9. Figures",
+        "",
+        "![](fig_wtp_vs_c_above_ceiling.png)",
+        "![](fig_switch_on_histogram.png)",
+        "![](fig_elasticity_by_orientation.png)",
+        "![](fig_comfort_distribution.png)",
+        "",
+    ]
+    (OUT / "analysis.md").write_text("\n".join(L))
+
+
+def configure(argv=None) -> argparse.Namespace:
+    """Point the module at a run (defaults = final run v1)."""
+    global RUN, OUT, CACHE, CACHE_LINES, LABEL, LEVEL_MATCHED
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("--run-dir", default=str(RUN), help="saved run folder (read-only)")
+    ap.add_argument("--cache-path", default=str(CACHE), help="the run's LLM cache (.jsonl)")
+    ap.add_argument("--cache-lines", type=int, default=CACHE_LINES,
+                    help="expected cache line count (asserted); -1 to skip")  # fmt: skip
+    ap.add_argument("--label", default=LABEL, help="run label (final_v1 keeps its prose)")
+    ap.add_argument("--out", default=None, help="output folder (default <run-dir>/analysis)")
+    ap.add_argument("--level-matched", action="store_true",
+                    help="exploratory: add a rule-based agent refit to this run's LLM WTP")  # fmt: skip
+    a = ap.parse_args(argv)
+    RUN, CACHE, LABEL = Path(a.run_dir), Path(a.cache_path), a.label
+    OUT = Path(a.out) if a.out else RUN / "analysis"
+    CACHE_LINES = None if a.cache_lines == -1 else a.cache_lines
+    LEVEL_MATCHED = a.level_matched
+    return a
+
+
 if __name__ == "__main__":
+    configure()
     T = compute()
     figures(T)
-    write_md(T)
+    (write_md if LABEL == "final_v1" and not LEVEL_MATCHED else write_md_generic)(T)
     pd.set_option("display.width", 250, "display.max_columns", 40, "display.max_colwidth", 80)
     for k in ["h1", "h1_pooled", "elasticity", "comfort_ori", "comfort_arch", "comfort_gt25",
               "ori_x_arch", "thresholds", "post_ori", "mono", "mono_shown", "discord", "wtp_values",

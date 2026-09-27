@@ -1,0 +1,4 @@
+orientation,k_level_matched,k_exact,k_frozen_fixed_band,n_distinct_prompts,rmse,r2_vs_mean,mean_llm_wtp_at_zero_regressor
+comfort_prioritising,3.294,3.294053,3.791,258,0.462,0.2269,0.2103
+balanced,0.461,0.461454,0.62,345,0.1766,0.7513,0.0701
+comfort_flexible,0.248,0.247608,0.66,431,0.1024,0.8164,0.0169
