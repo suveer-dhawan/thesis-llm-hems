@@ -1,0 +1,4 @@
+orientation,n_households_total,n_hh_above,n_dec_above,mean_wtp_above,ci,mean_C_above_of_those
+comfort_prioritising,5,5,82,2.0853658536585367,"2.09 [2.04, 2.13]",0.3206490182965451
+balanced,8,8,224,0.8133928571428573,"0.81 [0.75, 0.88]",0.7013837607678673
+comfort_flexible,11,11,333,0.4271771771771772,"0.43 [0.39, 0.47]",0.9579777647084051

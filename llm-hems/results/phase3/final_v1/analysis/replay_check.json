@@ -1,0 +1,16 @@
+{
+  "curves_rows": 13824,
+  "llm_log_rows": 4608,
+  "rule_log_rows": 4608,
+  "curves_identical": true,
+  "llm_log_identical": true,
+  "rule_log_identical": true,
+  "summary_csv_identical": true,
+  "replayed_llm_cached_share": 0.5,
+  "cache_sha256_before": "ad7678a39fca2826586066521f7a75ab7c858e871525f42064b42466b76f265e",
+  "cache_sha256_after": "ad7678a39fca2826586066521f7a75ab7c858e871525f42064b42466b76f265e",
+  "cache_unchanged": true,
+  "live_calls": 0,
+  "cache_hits": 2304,
+  "pretemp_vs_prompt_max_abs_err": 0.04998783552183639
+}
