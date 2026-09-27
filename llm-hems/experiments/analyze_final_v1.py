@@ -384,6 +384,26 @@ def h1_table(d: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+H1_COLS = ["C_above_ceiling", "prioritising_n_hh", "prioritising_n_dec", "prioritising_ci",
+           "balanced_n_hh", "balanced_n_dec", "balanced_ci", "flexible_n_hh", "flexible_n_dec",
+           "flexible_ci", "prio_minus_bal", "bal_minus_flex"]  # fmt: skip
+
+
+def h1_verdict(h: pd.DataFrame, label: str) -> pd.DataFrame:
+    """Per above-ceiling bin with all three orientations: does prio > bal >= flex hold?"""
+    means = ["prioritising_mean_wtp", "balanced_mean_wtp", "flexible_mean_wtp"]
+    a = h[(h["side"] == "above")].dropna(subset=means)
+    return pd.DataFrame({
+        "variant": label, "bin": a["C_above_ceiling"],
+        "n_hh (prio/bal/flex)": a["prioritising_n_hh"].astype(str) + "/"
+        + a["balanced_n_hh"].astype(str) + "/" + a["flexible_n_hh"].astype(str),
+        "prio_mean": a[means[0]], "bal_mean": a[means[1]], "flex_mean": a[means[2]],
+        "order_holds_point": a["H1_order_point"].astype(bool),
+        "prio-bal_CI_excl_0": a["prio>bal_CI_excl_0"].astype(bool),
+        "bal-flex_CI_excl_0": a["bal_minus_flex"].str.extract(r"\[([-\d.]+),")[0].astype(float) > 0,
+    })  # fmt: skip
+
+
 def h1_summary_rows(d: pd.DataFrame) -> pd.DataFrame:
     """All above-ceiling decisions pooled per orientation (composition not matched)."""
     rows = []
@@ -752,6 +772,15 @@ def compute() -> dict:
     agents3 = ["llm", "rule_based", "milp"]
     T["h1"] = h1_table(dl)
     T["h1_pooled"] = h1_summary_rows(dl)
+    # robustness: base day only, and one decision per distinct prompt (first occurrence,
+    # ordered household -> base before cpp -> t), so pre-17:00 prompts shared by the two
+    # days count once. Identical prompt => identical answer (T=0, cache), so this is exact.
+    T["h1_base_only"] = h1_table(dl[dl["day"] == "base"])
+    dedup = dl.sort_values(["household_id", "day", "t"]).drop_duplicates("prompt", keep="first")
+    T["h1_dedup"] = h1_table(dedup)
+    T["h1_dedup_n"] = {"decisions": len(dl), "distinct_prompts": len(dedup),
+                       "distinct_across_households": int(
+                           dl.groupby("prompt")["household_id"].nunique().gt(1).sum())}
     T["elasticity"] = elasticity_by(rec, "comfort_orientation", agents3 + ["isotonic"])
     ch = comfort_per_household(prim)
     T["comfort_hh"] = ch
@@ -777,6 +806,8 @@ def compute() -> dict:
     T["cf_summary"] = summ[(summ["seed"] == 42) & summ["agent"].isin(agents3 + ["isotonic"])]
 
     csvs = {"h1_wtp_by_orientation_bin": T["h1"], "h1_pooled_above_ceiling": T["h1_pooled"],
+            "h1_wtp_by_orientation_bin_base_day_only": T["h1_base_only"],
+            "h1_wtp_by_orientation_bin_dedup_prompt": T["h1_dedup"],
             "elasticity_by_orientation": T["elasticity"], "comfort_per_household": ch,
             "comfort_by_orientation": T["comfort_ori"], "comfort_by_archetype": T["comfort_arch"],
             "comfort_max_exceedance_gt_2p5": T["comfort_gt25"],
@@ -1023,9 +1054,30 @@ def write_md(T) -> None:
         "independently. Note: base and CPP days share identical prompts before 17:00, so "
         "pre-17:00 decisions appear twice (as pre-specified, 'both days pooled').",
         "",
-        md(h1[["C_above_ceiling", "prioritising_n_hh", "prioritising_n_dec", "prioritising_ci",
-               "balanced_n_hh", "balanced_n_dec", "balanced_ci", "flexible_n_hh",
-               "flexible_n_dec", "flexible_ci", "prio_minus_bal", "bal_minus_flex"]]),
+        md(h1[H1_COLS]),
+        "",
+        "### H1 robustness: base day only / one decision per distinct prompt  *(exploratory "
+        "(post-hoc) robustness check of the pre-registered table; same bins, same bootstrap)*",
+        "",
+        "(a) Baseline day only — each household-step counted once; drops the CPP day's "
+        "post-17:00 decisions.",
+        "",
+        md(T["h1_base_only"][H1_COLS]),
+        "",
+        f"(b) Deduplicated by distinct prompt — {T['h1_dedup_n']['distinct_prompts']:,} distinct "
+        f"prompts from {T['h1_dedup_n']['decisions']:,} decisions; each kept once, at its first "
+        f"occurrence (household, then baseline before CPP day, then time). Removes the "
+        f"pre-17:00 double count and also collapses identical prompts across households of the "
+        f"same orientation ({T['h1_dedup_n']['distinct_across_households']} prompts occurred "
+        f"in more than one household); the kept copy's exact temperature sets the bin.",
+        "",
+        md(T["h1_dedup"][H1_COLS]),
+        "",
+        "Ordering check in bins where all three orientations are observed:",
+        "",
+        md(pd.concat([h1_verdict(h1, "pooled (pre-registered)"),
+                      h1_verdict(T["h1_base_only"], "(a) base day only"),
+                      h1_verdict(T["h1_dedup"], "(b) distinct prompts")], ignore_index=True), 2),
         "",
         "All above-ceiling decisions per orientation (not temperature-matched; shown for "
         "context only — prioritising households sit much closer to the ceiling):",
@@ -1040,7 +1092,14 @@ def write_md(T) -> None:
         f"{T['decisions_llm'].query('orientation == \"comfort_prioritising\"')['over_c'].max():.2f} °C "
         f"over (their high WTP keeps the AC on), so above 1 °C only balanced vs flexible can be "
         f"compared: balanced > flexible in {bf_pos} of {len(bf)} bins. H1 is supported where it "
-        f"can be tested; the comparison with prioritising rests on 5 households and ≤1 °C.",
+        f"can be tested; the comparison with prioritising rests on 5 households and ≤1 °C. "
+        + (("Robustness: counting the baseline day only, or each distinct prompt once, "
+            "leaves the ordering and both CI exclusions unchanged in every testable bin.")
+           if all(h1_verdict(t, "")[["order_holds_point", "prio-bal_CI_excl_0",
+                                      "bal-flex_CI_excl_0"]].all().all()
+                  for t in (T["h1_base_only"], T["h1_dedup"]))
+           else "Robustness: the ordering or a CI exclusion changes in at least one robustness "
+                "variant — see the ordering check above."),
         "",
         "## 2. Per-orientation elasticity  *(exploratory, post-hoc)*",
         "",

@@ -46,6 +46,56 @@ Raw LLM WTP (before archetype factor), both days pooled, binned on the exact pre
 | (+2.5, +3.0] | 0 | 0 | – | 1 | 2 | 2.50 [2.50, 2.50] | 2 | 15 | 0.48 [0.48, 0.48] | – | 2.02 [2.02, 2.02] |
 | (+3.0, +3.5] | 0 | 0 | – | 0 | 0 | – | 1 | 4 | 0.46 [0.46, 0.46] | – | – |
 
+### H1 robustness: base day only / one decision per distinct prompt  *(exploratory (post-hoc) robustness check of the pre-registered table; same bins, same bootstrap)*
+
+(a) Baseline day only — each household-step counted once; drops the CPP day's post-17:00 decisions.
+
+| C_above_ceiling | prioritising_n_hh | prioritising_n_dec | prioritising_ci | balanced_n_hh | balanced_n_dec | balanced_ci | flexible_n_hh | flexible_n_dec | flexible_ci | prio_minus_bal | bal_minus_flex |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| (-3.5, -3.0] | 3 | 25 | 0.05 [0.04, 0.05] | 6 | 38 | 0.04 [0.04, 0.05] | 8 | 63 | 0.04 [0.04, 0.04] | 0.00 [-0.00, 0.01] | -0.00 [-0.01, 0.01] |
+| (-3.0, -2.5] | 5 | 35 | 0.05 [0.05, 0.05] | 8 | 61 | 0.05 [0.05, 0.05] | 11 | 80 | 0.05 [0.04, 0.05] | -0.00 [-0.00, 0.00] | 0.00 [0.00, 0.01] |
+| (-2.5, -2.0] | 5 | 17 | 0.05 [0.05, 0.05] | 8 | 34 | 0.05 [0.05, 0.05] | 11 | 40 | 0.05 [0.04, 0.05] | 0.00 [-0.00, 0.00] | 0.00 [0.00, 0.01] |
+| (-2.0, -1.5] | 5 | 17 | 0.04 [0.03, 0.04] | 8 | 21 | 0.05 [0.04, 0.05] | 11 | 31 | 0.05 [0.04, 0.05] | -0.01 [-0.02, -0.00] | -0.00 [-0.01, 0.00] |
+| (-1.5, -1.0] | 5 | 15 | 0.05 [0.05, 0.05] | 8 | 30 | 0.05 [0.05, 0.05] | 11 | 24 | 0.04 [0.03, 0.04] | 0.00 [-0.00, 0.00] | 0.01 [0.01, 0.02] |
+| (-1.0, -0.5] | 5 | 43 | 0.05 [0.05, 0.05] | 8 | 45 | 0.05 [0.05, 0.05] | 11 | 49 | 0.04 [0.04, 0.05] | 0.00 [-0.00, 0.00] | 0.01 [0.00, 0.01] |
+| (-0.5, +0.0] | 5 | 47 | 0.05 [0.05, 0.05] | 8 | 46 | 0.05 [0.05, 0.05] | 11 | 85 | 0.04 [0.04, 0.05] | -0.00 [-0.00, 0.00] | 0.01 [0.00, 0.01] |
+| (+0.0, +0.5] | 5 | 33 | 2.05 [1.98, 2.10] | 8 | 57 | 0.60 [0.51, 0.70] | 11 | 71 | 0.27 [0.25, 0.30] | 1.45 [1.33, 1.56] | 0.33 [0.23, 0.43] |
+| (+0.5, +1.0] | 3 | 8 | 2.25 [2.17, 2.50] | 8 | 22 | 0.59 [0.50, 0.66] | 11 | 43 | 0.43 [0.39, 0.50] | 1.66 [1.55, 1.97] | 0.15 [0.05, 0.24] |
+| (+1.0, +1.5] | 0 | 0 | – | 7 | 22 | 1.02 [0.78, 1.42] | 5 | 9 | 0.47 [0.45, 0.48] | – | 0.55 [0.31, 0.96] |
+| (+1.5, +2.0] | 0 | 0 | – | 4 | 5 | 1.29 [0.72, 1.99] | 5 | 13 | 0.69 [0.55, 0.91] | – | 0.60 [-0.00, 1.33] |
+| (+2.0, +2.5] | 0 | 0 | – | 2 | 2 | 1.62 [0.75, 2.50] | 4 | 14 | 0.63 [0.57, 0.75] | – | 0.99 [0.05, 1.91] |
+| (+2.5, +3.0] | 0 | 0 | – | 1 | 1 | 2.50 [2.50, 2.50] | 1 | 6 | 0.48 [0.48, 0.48] | – | 2.02 [2.02, 2.02] |
+
+(b) Deduplicated by distinct prompt — 955 distinct prompts from 2,304 decisions; each kept once, at its first occurrence (household, then baseline before CPP day, then time). Removes the pre-17:00 double count and also collapses identical prompts across households of the same orientation (263 prompts occurred in more than one household); the kept copy's exact temperature sets the bin.
+
+| C_above_ceiling | prioritising_n_hh | prioritising_n_dec | prioritising_ci | balanced_n_hh | balanced_n_dec | balanced_ci | flexible_n_hh | flexible_n_dec | flexible_ci | prio_minus_bal | bal_minus_flex |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| (-3.5, -3.0] | 3 | 24 | 0.05 [0.04, 0.05] | 6 | 23 | 0.04 [0.04, 0.05] | 6 | 29 | 0.04 [0.04, 0.05] | 0.00 [-0.01, 0.01] | -0.00 [-0.01, 0.01] |
+| (-3.0, -2.5] | 5 | 32 | 0.05 [0.05, 0.05] | 8 | 47 | 0.05 [0.05, 0.05] | 10 | 46 | 0.04 [0.04, 0.05] | -0.00 [-0.00, 0.00] | 0.00 [0.00, 0.01] |
+| (-2.5, -2.0] | 5 | 14 | 0.05 [0.05, 0.05] | 7 | 26 | 0.05 [0.05, 0.05] | 9 | 25 | 0.04 [0.04, 0.05] | -0.00 [-0.00, 0.00] | 0.01 [0.00, 0.01] |
+| (-2.0, -1.5] | 5 | 12 | 0.04 [0.03, 0.05] | 7 | 13 | 0.05 [0.04, 0.05] | 8 | 18 | 0.05 [0.04, 0.05] | -0.00 [-0.02, 0.01] | -0.00 [-0.01, 0.01] |
+| (-1.5, -1.0] | 4 | 13 | 0.05 [0.05, 0.05] | 8 | 30 | 0.05 [0.05, 0.05] | 9 | 14 | 0.04 [0.02, 0.05] | 0.00 [-0.00, 0.00] | 0.01 [0.00, 0.03] |
+| (-1.0, -0.5] | 5 | 37 | 0.05 [0.05, 0.05] | 8 | 46 | 0.05 [0.05, 0.05] | 9 | 38 | 0.05 [0.04, 0.05] | 0.00 [-0.00, 0.00] | 0.00 [0.00, 0.01] |
+| (-0.5, +0.0] | 5 | 43 | 0.05 [0.05, 0.05] | 8 | 45 | 0.05 [0.05, 0.05] | 10 | 62 | 0.04 [0.04, 0.05] | -0.00 [-0.00, 0.00] | 0.01 [0.00, 0.01] |
+| (+0.0, +0.5] | 5 | 32 | 2.06 [1.99, 2.13] | 8 | 51 | 0.61 [0.48, 0.75] | 10 | 53 | 0.27 [0.22, 0.31] | 1.45 [1.30, 1.60] | 0.35 [0.20, 0.49] |
+| (+0.5, +1.0] | 3 | 8 | 2.25 [2.17, 2.50] | 7 | 26 | 0.64 [0.51, 0.77] | 11 | 40 | 0.46 [0.42, 0.53] | 1.61 [1.46, 1.96] | 0.18 [0.03, 0.32] |
+| (+1.0, +1.5] | 0 | 0 | – | 7 | 25 | 1.08 [0.86, 1.50] | 10 | 21 | 0.53 [0.45, 0.64] | – | 0.55 [0.30, 0.97] |
+| (+1.5, +2.0] | 0 | 0 | – | 6 | 12 | 1.45 [1.22, 1.81] | 8 | 18 | 0.64 [0.49, 0.81] | – | 0.81 [0.52, 1.18] |
+| (+2.0, +2.5] | 0 | 0 | – | 3 | 3 | 1.92 [0.75, 2.50] | 6 | 15 | 0.57 [0.47, 0.68] | – | 1.34 [0.21, 2.00] |
+| (+2.5, +3.0] | 0 | 0 | – | 1 | 1 | 2.50 [2.50, 2.50] | 2 | 9 | 0.48 [0.48, 0.48] | – | 2.02 [2.02, 2.02] |
+| (+3.0, +3.5] | 0 | 0 | – | 0 | 0 | – | 1 | 4 | 0.46 [0.46, 0.46] | – | – |
+
+Ordering check in bins where all three orientations are observed:
+
+| variant | bin | n_hh (prio/bal/flex) | prio_mean | bal_mean | flex_mean | order_holds_point | prio-bal_CI_excl_0 | bal-flex_CI_excl_0 |
+|---|---|---|---|---|---|---|---|---|
+| pooled (pre-registered) | (+0.0, +0.5] | 5/8/11 | 2.05 | 0.60 | 0.28 | True | True | True |
+| pooled (pre-registered) | (+0.5, +1.0] | 3/8/11 | 2.25 | 0.61 | 0.44 | True | True | True |
+| (a) base day only | (+0.0, +0.5] | 5/8/11 | 2.05 | 0.60 | 0.27 | True | True | True |
+| (a) base day only | (+0.5, +1.0] | 3/8/11 | 2.25 | 0.59 | 0.43 | True | True | True |
+| (b) distinct prompts | (+0.0, +0.5] | 5/8/10 | 2.06 | 0.61 | 0.27 | True | True | True |
+| (b) distinct prompts | (+0.5, +1.0] | 3/7/11 | 2.25 | 0.64 | 0.46 | True | True | True |
+
 All above-ceiling decisions per orientation (not temperature-matched; shown for context only — prioritising households sit much closer to the ceiling):
 
 | orientation | n_households_total | n_hh_above | n_dec_above | mean_wtp_above | ci | mean_C_above_of_those |
@@ -54,7 +104,7 @@ All above-ceiling decisions per orientation (not temperature-matched; shown for 
 | balanced | 8 | 8 | 224 | 0.813 | 0.81 [0.75, 0.88] | 0.701 |
 | comfort_flexible | 11 | 11 | 333 | 0.427 | 0.43 [0.39, 0.47] | 0.958 |
 
-**Summary.** Below the ceiling the LLM gives essentially the same near-zero WTP (~$0.05) to every orientation. Above it, in every bin where all three orientations are observed ((+0.0, +0.5], (+0.5, +1.0]), the pre-registered order prioritising > balanced ≥ flexible holds, and both gaps have 95% CIs above zero. Prioritising households never get more than 0.73 °C over (their high WTP keeps the AC on), so above 1 °C only balanced vs flexible can be compared: balanced > flexible in 6 of 6 bins. H1 is supported where it can be tested; the comparison with prioritising rests on 5 households and ≤1 °C.
+**Summary.** Below the ceiling the LLM gives essentially the same near-zero WTP (~$0.05) to every orientation. Above it, in every bin where all three orientations are observed ((+0.0, +0.5], (+0.5, +1.0]), the pre-registered order prioritising > balanced ≥ flexible holds, and both gaps have 95% CIs above zero. Prioritising households never get more than 0.73 °C over (their high WTP keeps the AC on), so above 1 °C only balanced vs flexible can be compared: balanced > flexible in 6 of 6 bins. H1 is supported where it can be tested; the comparison with prioritising rests on 5 households and ≤1 °C. Robustness: counting the baseline day only, or each distinct prompt once, leaves the ordering and both CI exclusions unchanged in every testable bin.
 
 ## 2. Per-orientation elasticity  *(exploratory, post-hoc)*
 
