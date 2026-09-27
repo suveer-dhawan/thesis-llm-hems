@@ -78,7 +78,7 @@ There are two ways to reproduce the runs.
    clone so the tree stays clean.
 
    ```bash
-   git clone <repo-url> ~/thesis-run && cd ~/thesis-run/llm-hems
+   git clone https://github.com/suveer-dhawan/thesis-llm-hems.git ~/thesis-run && cd ~/thesis-run/llm-hems
    git show main:llm-hems/requirements-lock.txt > ~/requirements-lock.txt
    python3.12 -m venv .venv                      # 3.12.4
    .venv/bin/pip install -r ~/requirements-lock.txt
