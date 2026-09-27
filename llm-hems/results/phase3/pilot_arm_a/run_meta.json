@@ -1,0 +1,25 @@
+{
+  "households": [
+    8211127,
+    10042536,
+    10444433
+  ],
+  "steps": [
+    "elasticity"
+  ],
+  "llm_prompted_decisions": 288,
+  "llm_live_calls": 167,
+  "llm_model_versions": {
+    "42": {
+      "gemini-3.8-flash": 288
+    }
+  },
+  "llm_prompt_upper_bound": 288,
+  "llm_client_stats_by_seed": {
+    "42": {
+      "live_calls": 167,
+      "cache_hits": 121
+    }
+  },
+  "wall_seconds": 490.6
+}

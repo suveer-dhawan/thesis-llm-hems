@@ -1,0 +1,4 @@
+customer_ID,cluster,income_tier,annual_kwh,avg_rate,est_annual_cost,income_midpoint,burden,cost_sensitivity,archetype,archetype_income_tier,price_sensitivity,tolerance_band_c,thermal_sensitivity,comfort_orientation,schedule_profile,washer_release,washer_deadline,archetype_fixed,engagement_group,elec_use_tier
+8211127,3,HI,11837.4,0.302438,3580.08,72800,0.049177,M,B,A,moderate,1.5,tight,comfort_prioritising,evening,16:00,22:00,B,3,HI
+10042536,4,LOW,12568.3,0.302438,3801.14,31200,0.121831,H,C,C,high,2.0,moderate,balanced,evening,16:00,22:00,C,3,LOW
+10444433,6,HI,12458.6,0.302438,3767.95,72800,0.0517575,M,B,A,moderate,2.5,loose,comfort_flexible,evening,16:00,22:00,B,3,HI
