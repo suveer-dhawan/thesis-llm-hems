@@ -1,0 +1,6 @@
+agent,base_rebound_peak_kw,base_peak_step,base_hvac_kwh_20-22,base_hvac_kw_by_step_20-22,cpp_rebound_peak_kw,cpp_peak_step,cpp_hvac_kwh_20-22,cpp_hvac_kw_by_step_20-22,rebound_delta_kw (saved def.),hvac_kwh_20-22_cpp_minus_base
+milp,77.532,21:00,0.0,0 / 0 / 0 / 0,113.072,20:00,22.0,44 / 0 / 0 / 0,35.54,22.0
+noisy_milp,79.532,21:00,3.0,4 / 0 / 2 / 0,107.072,20:00,19.0,38 / 0 / 0 / 0,27.54,16.0
+rule_based,101.532,21:00,21.0,8 / 4 / 24 / 6,107.072,20:00,33.0,38 / 0 / 24 / 4,5.54,12.0
+llm,93.532,21:00,24.0,4 / 16 / 16 / 12,101.532,21:00,33.0,16 / 18 / 24 / 8,8.0,9.0
+isotonic,101.532,21:00,25.0,8 / 12 / 24 / 6,107.072,20:00,43.0,38 / 22 / 22 / 4,5.54,18.0

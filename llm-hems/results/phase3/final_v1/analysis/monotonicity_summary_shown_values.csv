@@ -1,0 +1,5 @@
+group,household_days_with_pairs,pairs,wtp_fell,wtp_same,wtp_rose,fall_rate,household_days_with_any_fall
+all,38,246,28,65,153,"0.114 [0.069, 0.157]",15
+comfort_prioritising,0,0,0,0,0,–,0
+balanced,16,91,2,32,57,"0.022 [0.000, 0.054]",2
+comfort_flexible,22,155,26,33,96,"0.168 [0.110, 0.220]",13
