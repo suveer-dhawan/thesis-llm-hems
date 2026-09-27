@@ -1,0 +1,23 @@
+{
+  "commit": "937907b1fac7255d3e4248640ff3da853658d567",
+  "dirty": false,
+  "dirty_files": null,
+  "branch": "arm-a",
+  "timestamp_utc": "2026-09-27T01:26:30+00:00",
+  "argv": [
+    "experiments/run_phase3.py",
+    "--config",
+    "config/experiment.yaml",
+    "--households",
+    "8211127,10042536,10444433",
+    "--steps",
+    "elasticity",
+    "--band-mode",
+    "fixed",
+    "--cache-path",
+    "results/phase3/llm_cache_arm_a.jsonl",
+    "--out",
+    "results/phase3/pilot_arm_a"
+  ],
+  "python": "3.12.4"
+}

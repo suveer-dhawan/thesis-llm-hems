@@ -1,0 +1,24 @@
+{
+  "commit": "5851b05c68297e6c97e88a94a1f2329a999d41bd",
+  "dirty": false,
+  "dirty_files": null,
+  "branch": "arm-a",
+  "timestamp_utc": "2026-09-27T01:49:50+00:00",
+  "argv": [
+    "experiments/run_phase3.py",
+    "--config",
+    "config/experiment.yaml",
+    "--households",
+    "8201999,8208263,8211127,8395524,8456189,8463253,8481835,8568499,8596070,8619039,8632083,8638181,9012382,9911140,9911204,9911250,9911254,10042536,10239118,10278838,10444433,10556929,10649333,11105177",
+    "--steps",
+    "elasticity,overlay,seeds",
+    "--band-mode",
+    "fixed",
+    "--cache-path",
+    "results/phase3/llm_cache_arm_a.jsonl",
+    "--out",
+    "results/phase3/arm_a",
+    "--approve-budget"
+  ],
+  "python": "3.12.4"
+}

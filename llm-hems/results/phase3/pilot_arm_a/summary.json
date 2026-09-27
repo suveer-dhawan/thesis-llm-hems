@@ -1,0 +1,182 @@
+{
+  "households": [
+    8211127,
+    10042536,
+    10444433
+  ],
+  "n_households": 3,
+  "dates": [
+    "2013-01-18"
+  ],
+  "band": {
+    "mode": "fixed",
+    "fixed_band_c": 2.0
+  },
+  "wtp_scaling": {
+    "global_scale": 1.0,
+    "archetype_factors": {
+      "A": 1.3,
+      "B": 1.0,
+      "C": 0.7
+    },
+    "applies_to": [
+      "rule_based",
+      "llm"
+    ],
+    "calibration_enabled": false
+  },
+  "seeds": {
+    "primary": 42,
+    "llm": [
+      42
+    ],
+    "noisy_milp": [
+      42,
+      43,
+      44
+    ],
+    "deterministic_agents": [
+      "milp",
+      "rule_based"
+    ]
+  },
+  "conway_range": [
+    -0.47,
+    -0.026
+  ],
+  "elasticity_method": "base",
+  "by_agent_seed": [
+    {
+      "agent": "milp",
+      "seed": 42,
+      "date": "2013-01-18",
+      "n_households": 3,
+      "base_peak_kw": 21.844,
+      "base_time_of_peak": "21:00",
+      "base_par": 3.186,
+      "base_cpp_window_mean_kw": 9.85,
+      "base_post_20:00-20:30_kw": 7.748,
+      "base_post_over_cpp_ratio": 0.787,
+      "base_degree_hours_above_ceiling": 0.0,
+      "base_max_exceedance_c": 0.0,
+      "base_flexible_kwh": 26.0,
+      "base_washer_completed": 3,
+      "cpp_peak_kw": 21.844,
+      "cpp_time_of_peak": "21:00",
+      "cpp_par": 3.148,
+      "cpp_cpp_window_mean_kw": 8.183,
+      "cpp_post_20:00-20:30_kw": 13.748,
+      "cpp_post_over_cpp_ratio": 1.68,
+      "cpp_degree_hours_above_ceiling": 0.0,
+      "cpp_max_exceedance_c": 0.0,
+      "cpp_flexible_kwh": 28.0,
+      "cpp_washer_completed": 3,
+      "elasticity_flexible": -0.6043956044,
+      "elasticity_flexible_midpoint": -1.4957264957,
+      "elasticity_total": -0.1431732396,
+      "elasticity_total_midpoint": -0.2488269586,
+      "total_in_conway": true,
+      "daily_flexible_kwh_change": 2.0,
+      "daily_flexible_pct_change": 7.69
+    },
+    {
+      "agent": "noisy_milp",
+      "seed": 42,
+      "date": "2013-01-18",
+      "n_households": 3,
+      "base_peak_kw": 21.844,
+      "base_time_of_peak": "21:00",
+      "base_par": 3.186,
+      "base_cpp_window_mean_kw": 9.85,
+      "base_post_20:00-20:30_kw": 7.748,
+      "base_post_over_cpp_ratio": 0.787,
+      "base_degree_hours_above_ceiling": 0.0,
+      "base_max_exceedance_c": 0.0,
+      "base_flexible_kwh": 26.0,
+      "base_washer_completed": 3,
+      "cpp_peak_kw": 21.844,
+      "cpp_time_of_peak": "21:00",
+      "cpp_par": 3.11,
+      "cpp_cpp_window_mean_kw": 7.85,
+      "cpp_post_20:00-20:30_kw": 13.748,
+      "cpp_post_over_cpp_ratio": 1.751,
+      "cpp_degree_hours_above_ceiling": 0.0,
+      "cpp_max_exceedance_c": 0.0,
+      "cpp_flexible_kwh": 30.0,
+      "cpp_washer_completed": 3,
+      "elasticity_flexible": -0.7252747253,
+      "elasticity_flexible_midpoint": -2.0192307692,
+      "elasticity_total": -0.1718078875,
+      "elasticity_total_midpoint": -0.3042155585,
+      "total_in_conway": true,
+      "daily_flexible_kwh_change": 4.0,
+      "daily_flexible_pct_change": 15.38
+    },
+    {
+      "agent": "rule_based",
+      "seed": 42,
+      "date": "2013-01-18",
+      "n_households": 3,
+      "base_peak_kw": 21.844,
+      "base_time_of_peak": "21:00",
+      "base_par": 3.306,
+      "base_cpp_window_mean_kw": 9.183,
+      "base_post_20:00-20:30_kw": 11.748,
+      "base_post_over_cpp_ratio": 1.279,
+      "base_degree_hours_above_ceiling": 14.634,
+      "base_max_exceedance_c": 1.789,
+      "base_flexible_kwh": 20.0,
+      "base_washer_completed": 3,
+      "cpp_peak_kw": 25.844,
+      "cpp_time_of_peak": "21:00",
+      "cpp_par": 3.937,
+      "cpp_cpp_window_mean_kw": 8.517,
+      "cpp_post_20:00-20:30_kw": 11.748,
+      "cpp_post_over_cpp_ratio": 1.379,
+      "cpp_degree_hours_above_ceiling": 20.395,
+      "cpp_max_exceedance_c": 2.406,
+      "cpp_flexible_kwh": 19.0,
+      "cpp_washer_completed": 3,
+      "elasticity_flexible": -0.3384615385,
+      "elasticity_flexible_midpoint": -0.6730769231,
+      "elasticity_total": -0.0614267765,
+      "elasticity_total_midpoint": -0.1014051862,
+      "total_in_conway": true,
+      "daily_flexible_kwh_change": -1.0,
+      "daily_flexible_pct_change": -5.0
+    },
+    {
+      "agent": "llm",
+      "seed": 42,
+      "date": "2013-01-18",
+      "n_households": 3,
+      "base_peak_kw": 23.844,
+      "base_time_of_peak": "21:00",
+      "base_par": 3.586,
+      "base_cpp_window_mean_kw": 8.85,
+      "base_post_20:00-20:30_kw": 9.748,
+      "base_post_over_cpp_ratio": 1.101,
+      "base_degree_hours_above_ceiling": 22.502,
+      "base_max_exceedance_c": 2.694,
+      "base_flexible_kwh": 21.0,
+      "base_washer_completed": 3,
+      "cpp_peak_kw": 25.844,
+      "cpp_time_of_peak": "21:00",
+      "cpp_par": 3.912,
+      "cpp_cpp_window_mean_kw": 8.517,
+      "cpp_post_20:00-20:30_kw": 7.748,
+      "cpp_post_over_cpp_ratio": 0.91,
+      "cpp_degree_hours_above_ceiling": 25.084,
+      "cpp_max_exceedance_c": 2.694,
+      "cpp_flexible_kwh": 20.0,
+      "cpp_washer_completed": 3,
+      "elasticity_flexible": -0.2115384615,
+      "elasticity_flexible_midpoint": -0.3846153846,
+      "elasticity_total": -0.0318702014,
+      "elasticity_total_midpoint": -0.0516757714,
+      "total_in_conway": true,
+      "daily_flexible_kwh_change": -1.0,
+      "daily_flexible_pct_change": -4.76
+    }
+  ]
+}
