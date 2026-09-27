@@ -1,0 +1,7 @@
+orientation,k_level_matched,k_exact,k_frozen_fixed_band,n_distinct_prompts,rmse,r2_vs_mean,mean_llm_wtp_at_zero_regressor,model
+comfort_prioritising,5.156,5.155979,3.791,215,0.4342,0.7371,0.0477,flash-lite
+balanced,0.909,0.909142,0.62,348,0.3366,0.6025,0.0487,flash-lite
+comfort_flexible,0.294,0.29392,0.66,392,0.2006,0.3867,0.0438,flash-lite
+comfort_prioritising,3.294,3.294053,3.791,258,0.462,0.2269,0.2103,3.8-flash
+balanced,0.461,0.461454,0.62,345,0.1766,0.7513,0.0701,3.8-flash
+comfort_flexible,0.248,0.247608,0.66,431,0.1024,0.8164,0.0169,3.8-flash

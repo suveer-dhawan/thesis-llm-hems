@@ -1,0 +1,12 @@
+model,agent,seed,x,y
+shared,milp,42,0.0,1.555
+shared,noisy_milp,42,0.0,1.459
+shared,noisy_milp,43,0.0,1.299
+shared,noisy_milp,44,0.0,1.425
+shared,rule_based,42,164.377,1.372
+flash-lite,llm,42,143.795,1.054
+flash-lite,isotonic,42,160.511,1.421
+flash-lite,rule_based_lm,42,214.93,1.441
+3.8-flash,llm,42,240.52,1.261
+3.8-flash,isotonic,42,267.446,1.473
+3.8-flash,rule_based_lm,42,293.389,1.528

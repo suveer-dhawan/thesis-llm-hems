@@ -1,0 +1,9 @@
+model,agent,20:00,20:30,21:00,21:30,22:00,22:30,23:00,23:30,none
+flash-lite,llm,8,7,5,0,2,0,0,0,2
+flash-lite,isotonic,18,3,1,0,0,0,0,0,2
+flash-lite,rule_based_lm,20,0,3,1,0,0,0,0,0
+flash-lite (shared),rule_based,19,0,4,1,0,0,0,0,0
+3.8-flash,llm,13,3,8,0,0,0,0,0,0
+3.8-flash,isotonic,18,2,4,0,0,0,0,0,0
+3.8-flash,rule_based_lm,21,0,2,1,0,0,0,0,0
+3.8-flash (shared),rule_based,19,0,4,1,0,0,0,0,0
