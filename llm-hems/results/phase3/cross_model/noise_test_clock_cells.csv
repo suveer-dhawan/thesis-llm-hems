@@ -1,0 +1,3 @@
+model,distinct above-ceiling prompts,cells (orientation × shown °C) seen at ≥2 clocks,prompts in those cells,cells where WTP differs by clock,share of WTP variance in those cells that is within-cell (clock)
+flash-lite,318,58,312,47,0.22052282553404445
+3.8-flash,407,66,394,63,0.12253372490643899
