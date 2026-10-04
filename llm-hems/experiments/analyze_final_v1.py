@@ -1314,7 +1314,7 @@ def write_md(T) -> None:
         "post-hoc)*",
         "",
         "Consecutive steps of a household-day where °C above ceiling rises and both steps are "
-        "above the ceiling; rate = share where WTP falls (household-bootstrap CI). Upper table "
+        "above the ceiling; rate = share where WTP falls (household-day bootstrap CI). Upper table "
         "uses the exact temperature, lower the 0.1 °C value shown to the model.",
         "",
         md(T["mono"]),

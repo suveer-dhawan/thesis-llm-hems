@@ -438,7 +438,7 @@ Post-CPP contribution by orientation (HVAC kW in 20:00–20:30, share of the age
 
 ## 6. WTP non-monotonicity  *(pre-registered as descriptive under H4; rate definition post-hoc)*
 
-Consecutive steps of a household-day where °C above ceiling rises and both steps are above the ceiling; rate = share where WTP falls (household-bootstrap CI). Upper table uses the exact temperature, lower the 0.1 °C value shown to the model.
+Consecutive steps of a household-day where °C above ceiling rises and both steps are above the ceiling; rate = share where WTP falls (household-day bootstrap CI). Upper table uses the exact temperature, lower the 0.1 °C value shown to the model.
 
 | group | household_days_with_pairs | pairs | wtp_fell | wtp_same | wtp_rose | fall_rate | household_days_with_any_fall |
 |---|---|---|---|---|---|---|---|
